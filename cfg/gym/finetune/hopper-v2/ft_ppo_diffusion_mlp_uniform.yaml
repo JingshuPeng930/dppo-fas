@@ -1,0 +1,12 @@
+# DPPO + uniform domain randomization over the same disturbance bins (baseline).
+# Identical to the FAS config except beta = 0  ->  p(c) = 1/|C|.
+# Run:  python script/run.py --config-dir=cfg/gym/finetune/hopper-v2 --config-name=ft_ppo_diffusion_mlp_uniform
+defaults:
+  - ft_ppo_diffusion_mlp_fas
+  - _self_
+
+method: uniform
+name: ${env_name}_ppo_diffusion_mlp_${method}_ta${horizon_steps}_td${denoising_steps}_tdf${ft_denoising_steps}
+
+fas:
+  beta: 0.0

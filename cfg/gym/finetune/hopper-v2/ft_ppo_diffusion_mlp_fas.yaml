@@ -1,0 +1,39 @@
+# DPPO + Failure-Aware Sampling (FAS) over disturbance conditions.
+# Inherits every DPPO hyperparameter from ft_ppo_diffusion_mlp.yaml.
+# Run:  python script/run.py --config-dir=cfg/gym/finetune/hopper-v2 --config-name=ft_ppo_diffusion_mlp_fas
+defaults:
+  - ft_ppo_diffusion_mlp
+  - _self_
+
+_target_: agent.finetune.train_ppo_diffusion_fas_agent.TrainPPODiffusionFASAgent
+method: fas
+name: ${env_name}_ppo_diffusion_mlp_${method}_a${fas.alpha}_b${fas.beta}_ta${horizon_steps}_td${denoising_steps}_tdf${ft_denoising_steps}
+
+env:
+  wrappers:
+    mujoco_disturbance:
+      body_name: torso
+      max_episode_steps: ${env.max_episode_steps}
+      # training-condition bins C = cartesian product -> 4 x 3 x 3 = 36 bins
+      condition_space:
+        mass_scale: [0.75, 1.0, 1.25, 1.5]     # x nominal torso mass
+        friction_scale: [0.5, 1.0, 1.5]        # x nominal sliding friction (all geoms)
+        impulse_force: [0.0, 150.0, 300.0]     # [N] horizontal push on torso
+      impulse_prob: 0.01        # per env step chance to start a push
+      impulse_duration: 5       # env steps a push is held (5 x 0.008s for hopper)
+      jitter: 0.0               # optional multiplicative noise inside a bin
+
+fas:
+  alpha: 1.0          # failure prioritization strength
+  beta: 0.5           # mix: beta * failure-weighted + (1 - beta) * uniform   (beta=0 -> uniform DR)
+  delta: 0.05         # smoothing, keeps solved bins sampleable
+  ema_rate: 0.3       # weight on the newest per-bin failure estimate
+  init_score: 0.5     # prior failure score before a bin is observed
+  update_from: [eval, train]   # which episodes update s_c
+  eval_schedule_len: 16        # round-robin conditions per env during eval iterations
+  success:
+    criterion: survive          # fell (terminated) before the 1000-step limit = failure
+
+wandb:
+  project: dppo-fas-${env_name}
+  run: ${now:%H-%M-%S}_${name}_${seed}

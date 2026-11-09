@@ -1,0 +1,31 @@
+# Evaluate a policy on a fixed grid of disturbance conditions (same grid as training).
+# Pretrained:  python script/run.py --config-dir=cfg/gym/eval/hopper-v2 --config-name=eval_diffusion_mlp_disturbance
+# Fine-tuned:  ... base_policy_path=<run>/checkpoint/state_<itr>.pt ft_denoising_steps=10
+defaults:
+  - eval_diffusion_mlp
+  - _self_
+
+_target_: agent.eval.eval_diffusion_disturbance_agent.EvalDiffusionDisturbanceAgent
+name: ${env_name}_eval_disturbance_${eval_grid}_ta${horizon_steps}_td${denoising_steps}_tdf${ft_denoising_steps}
+logdir: ${oc.env:DPPO_LOG_DIR}/gym-eval-disturbance/${name}/${now:%Y-%m-%d}_${now:%H-%M-%S}_${seed}
+base_policy_path: ${oc.env:DPPO_LOG_DIR}/gym-pretrain/hopper-medium-v2_pre_diffusion_mlp_ta4_td20/2024-06-12_23-10-05/checkpoint/state_3000.pt
+seed: 1000          # different from training seeds
+
+eval_grid: train
+n_episodes_per_condition: 10
+success:
+    criterion: survive          # fell (terminated) before the 1000-step limit = failure
+
+env:
+  wrappers:
+    mujoco_disturbance:
+      body_name: torso
+      max_episode_steps: ${env.max_episode_steps}
+      # training-condition bins C = cartesian product -> 4 x 3 x 3 = 36 bins
+      condition_space:
+        mass_scale: [0.75, 1.0, 1.25, 1.5]     # x nominal torso mass
+        friction_scale: [0.5, 1.0, 1.5]        # x nominal sliding friction (all geoms)
+        impulse_force: [0.0, 150.0, 300.0]     # [N] horizontal push on torso
+      impulse_prob: 0.01        # per env step chance to start a push
+      impulse_duration: 5       # env steps a push is held (5 x 0.008s for hopper)
+      jitter: 0.0               # optional multiplicative noise inside a bin
