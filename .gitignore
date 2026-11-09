@@ -11,6 +11,7 @@ out/
 err/
 *.pkl
 *.sh
+!scripts/fas/*.sh
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -120,7 +121,7 @@ celerybeat.pid
 .venv
 # env/
 venv/
-ENV/
+# ENV/  (disabled: matches the code dir env/ on case-insensitive macOS)
 env.bak/
 venv.bak/
 

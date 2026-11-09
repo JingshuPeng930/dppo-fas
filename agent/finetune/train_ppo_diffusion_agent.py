@@ -44,6 +44,16 @@ class TrainPPODiffusionAgent(TrainPPOAgent):
                 gamma=1.0,
             )
 
+    # Hooks for subclasses (e.g. Failure-Aware Sampling). No-ops for vanilla DPPO.
+    def on_iteration_start(self, eval_mode):
+        pass
+
+    def on_env_step(self, step, info_venv, done_venv, eval_mode):
+        pass
+
+    def on_rollout_end(self, eval_mode):
+        pass
+
     def run(self):
         # Start training loop
         timer = Timer()
@@ -64,6 +74,8 @@ class TrainPPODiffusionAgent(TrainPPOAgent):
             eval_mode = self.itr % self.val_freq == 0 and not self.force_train
             self.model.eval() if eval_mode else self.model.train()
             last_itr_eval = eval_mode
+
+            self.on_iteration_start(eval_mode)
 
             # Reset env before iteration starts (1) if specified, (2) at eval mode, or (3) right after eval mode
             firsts_trajs = np.zeros((self.n_steps + 1, self.n_envs))
@@ -131,6 +143,7 @@ class TrainPPODiffusionAgent(TrainPPOAgent):
                     info_venv,
                 ) = self.venv.step(action_venv)
                 done_venv = terminated_venv | truncated_venv
+                self.on_env_step(step, info_venv, done_venv, eval_mode)
                 if self.save_full_observations:  # state-only
                     obs_full_venv = np.array(
                         [info["full_obs"]["state"] for info in info_venv]
@@ -191,6 +204,8 @@ class TrainPPODiffusionAgent(TrainPPOAgent):
                 avg_best_reward = 0
                 success_rate = 0
                 log.info("[WARNING] No episode completed within the iteration!")
+
+            self.on_rollout_end(eval_mode)
 
             # Update models
             if not eval_mode:

@@ -171,8 +171,13 @@ def make_async(
 
         # add wrappers
         if wrappers is not None:
-            for wrapper, args in wrappers.items():
-                env = wrapper_dict[wrapper](env, **args)
+            # multi_step must be outermost; config merging (e.g. Hydra defaults)
+            # appends new wrapper keys at the end, so enforce the order here
+            names = [w for w in wrappers.keys() if w != "multi_step"]
+            if "multi_step" in wrappers:
+                names.append("multi_step")
+            for wrapper in names:
+                env = wrapper_dict[wrapper](env, **wrappers[wrapper])
         return env
 
     def dummy_env_fn():
