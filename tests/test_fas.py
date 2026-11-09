@@ -321,3 +321,17 @@ def test_fas_agent_hooks(tmp_path):
     with open(a.fas_history_path, "rb") as f:
         hist = pickle.load(f)
     assert hist["history"][0]["source"] == "eval" and len(hist["history"][0]["cond"]) == 6
+
+
+def test_gym_config_targets_exist():
+    """Every _target_ in cfg/gym must point to an existing module file (upstream had stale ones)."""
+    import glob
+    import re
+
+    missing = set()
+    for f in glob.glob(os.path.join(REPO, "cfg/gym/**/*.yaml"), recursive=True):
+        for target in re.findall(r"_target_:\s*([\w.]+)", open(f).read()):
+            module = target.rsplit(".", 1)[0]
+            if not os.path.exists(os.path.join(REPO, *module.split(".")) + ".py"):
+                missing.add((os.path.relpath(f, REPO), target))
+    assert not missing, sorted(missing)
