@@ -121,7 +121,7 @@ celerybeat.pid
 .venv
 # env/
 venv/
-ENV/
+# ENV/  (disabled: matches the code dir env/ on case-insensitive macOS)
 env.bak/
 venv.bak/
 
