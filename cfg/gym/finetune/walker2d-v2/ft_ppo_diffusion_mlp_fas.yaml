@@ -33,7 +33,7 @@ fas:
   eval_schedule_len: 16        # round-robin conditions per env during eval iterations
   success:
     criterion: survive_steps    # failure = fell within the first min_steps env steps
-    min_steps: 300              # TODO calibrate on pretrained walker2d; criterion=survive -> strict 1000-step version
+    min_steps: 500              # calibrated on pretrained walker2d (L=300 gives 81% success); criterion=survive -> strict 1000-step version
 
 wandb:
   project: dppo-fas-${env_name}

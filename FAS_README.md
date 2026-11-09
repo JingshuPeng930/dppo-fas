@@ -38,11 +38,12 @@ Bins: torso mass ×{0.75, 1.0, 1.25, 1.5} × friction ×{0.5, 1.0, 1.5} × push 
 Pushes happen with probability 0.01 per step and last 5 steps.
 
 **Success:**
-- hopper and walker2d (main experiments): `criterion: survive_steps`, `min_steps: 300`. The robot must not fall within the first 300 env steps.
+- hopper and walker2d (main experiments): `criterion: survive_steps`. The robot must not fall within the first `min_steps` env steps: 300 for hopper, 500 for walker2d.
   - Why: the pretrained hopper-medium policy falls before 1000 steps in *every* bin, including nominal (median ~470 steps). With the strict criterion all s_c = 1 and FAS reduces to uniform.
   - With L=300, 19 of 36 bins have intermediate success (2 always succeed, 15 always fail).
   - The strict version (`fas.success.criterion=survive`, i.e. reach the 1000-step limit) is kept as the sparse-signal setting for RQ2.
-  - walker2d's `min_steps` is not calibrated yet.
+  - walker2d (pretrained, 36 bins): L=300 → 81% success with 10 saturated bins; **L=500 → 49% success, 34 of 36 bins intermediate**; L=1000 → 18%.
+  - Pretrained hopper with L=300: 26% balanced success. Friction ×1.5 is hardest (0%), pushes of 300 N drop success to 7%, and mass matters least.
 - halfcheetah: return ≥ `return_threshold`. This is a placeholder of 3000; **calibrate it** from the pretrained policy's nominal return.
 
 **FAS score updates:**
