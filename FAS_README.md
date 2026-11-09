@@ -48,11 +48,22 @@ Pushes happen with probability 0.01 per step and last 5 steps.
 
 ## Setup (Linux + NVIDIA GPU; MuJoCo/mujoco_py does not work on Apple Silicon)
 
+**Team machine (already set up):** the SafeAI `gpu3` server, under `~/dppo_fas`. It has 256 cores, 2× A6000 and 2× A5000.
+
 ```bash
-bash scripts/fas/setup_linux.sh dppo        # conda env, mujoco210, pip install -e .[gym], runs tests
-conda activate dppo && source scripts/fas/env.sh
+ssh gpu3
+source ~/dppo_fas/activate.sh               # conda env + MuJoCo + DPPO_* paths, cd into the repo
+git pull                                    # get the latest code
 export DPPO_WANDB_ENTITY=<team>             # optional; without it wandb=null
 ```
+
+Rules for the shared setup:
+- It is borrowed from a lab, so keep everything inside `~/dppo_fas`.
+- Pick a free GPU with `CUDA_VISIBLE_DEVICES=<id>` (check `nvidia-smi` first).
+- Use `tmux` for long runs.
+
+**A new machine:** run `bash scripts/fas/setup_linux.sh [ROOT]`.
+It needs no sudo and writes nothing outside ROOT. It installs Miniforge and MuJoCo 2.1 into ROOT, plus a `ROOT/activate.sh`.
 
 The pretrained checkpoints and normalization files download automatically on the first run.
 
