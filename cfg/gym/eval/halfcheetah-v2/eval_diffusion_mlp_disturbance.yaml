@@ -15,7 +15,7 @@ eval_grid: train
 n_episodes_per_condition: 10
 success:
     criterion: return           # halfcheetah never terminates
-    return_threshold: 3000      # TODO calibrate from the pretrained policy's nominal return
+    return_threshold: 4000      # calibrated on pretrained halfcheetah: 57% success, 28/36 bins intermediate
 
 env:
   wrappers:

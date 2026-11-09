@@ -33,7 +33,7 @@ fas:
   eval_schedule_len: 16        # round-robin conditions per env during eval iterations
   success:
     criterion: return           # halfcheetah never terminates
-    return_threshold: 3000      # TODO calibrate from the pretrained policy's nominal return
+    return_threshold: 4000      # calibrated on pretrained halfcheetah: 57% success, 28/36 bins intermediate
 
 wandb:
   project: dppo-fas-${env_name}

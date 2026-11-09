@@ -44,7 +44,7 @@ Pushes happen with probability 0.01 per step and last 5 steps.
   - The strict version (`fas.success.criterion=survive`, i.e. reach the 1000-step limit) is kept as the sparse-signal setting for RQ2.
   - walker2d (pretrained, 36 bins): L=300 → 81% success with 10 saturated bins; **L=500 → 49% success, 34 of 36 bins intermediate**; L=1000 → 18%.
   - Pretrained hopper with L=300: 26% balanced success. Friction ×1.5 is hardest (0%), pushes of 300 N drop success to 7%, and mass matters least.
-- halfcheetah: return ≥ `return_threshold`. This is a placeholder of 3000; **calibrate it** from the pretrained policy's nominal return.
+- halfcheetah: return ≥ `return_threshold` = 4000. Calibrated on the pretrained policy: returns are bimodal (flips ~800, otherwise 4000–4700); 4000 gives 57% success, 28/36 bins intermediate. Pushes of 300 N are the main difficulty.
 
 **FAS score updates:**
 - At eval iterations (every `val_freq`=10), the deterministic policy runs a round-robin over all bins.
@@ -118,7 +118,7 @@ Main metrics:
 ## Things to calibrate before the real runs
 
 1. **Disturbance strength.** First evaluate the pretrained policy on the train grid. Hard bins should fail often and easy bins should mostly succeed. If every bin is 0% or 100%, FAS has nothing to prioritize. Then adjust `condition_space`, `impulse_prob` and `impulse_duration`.
-2. The halfcheetah `return_threshold`.
+2. ~~The halfcheetah `return_threshold`~~ (done: 4000).
 3. Coverage. Each eval iteration gives about 1–3 episodes per bin with 40 envs, which is noisy. The EMA (`ema_rate`) smooths it, and `train.val_freq` controls how often eval happens.
 
 ## Known upstream quirks (left unchanged)
