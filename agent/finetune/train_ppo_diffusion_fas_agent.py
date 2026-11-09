@@ -52,6 +52,7 @@ class TrainPPODiffusionFASAgent(TrainPPODiffusionAgent):
         assert self.fas_update_from <= {"eval", "train"}, self.fas_update_from
         self.success_criterion = fas_cfg.success.criterion
         self.success_return_threshold = fas_cfg.success.get("return_threshold", None)
+        self.success_min_steps = fas_cfg.success.get("min_steps", None)
         self.eval_schedule_len = fas_cfg.get("eval_schedule_len", 16)
         self._eval_offset = 0
         self._episodes = []
@@ -100,7 +101,8 @@ class TrainPPODiffusionFASAgent(TrainPPODiffusionAgent):
             return
         cond, ret, length, term = map(np.array, zip(*self._episodes))
         success = episode_success(
-            ret, term, self.success_criterion, self.success_return_threshold
+            ret, term, self.success_criterion, self.success_return_threshold,
+            ep_len=length, min_steps=self.success_min_steps,
         ).astype(float)
 
         if source in self.fas_update_from:

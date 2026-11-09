@@ -14,7 +14,8 @@ seed: 1000          # different from training seeds
 eval_grid: train
 n_episodes_per_condition: 10
 success:
-    criterion: survive          # fell (terminated) before the 1000-step limit = failure
+    criterion: survive_steps    # failure = fell within the first min_steps env steps
+    min_steps: 300              # TODO calibrate on pretrained walker2d; criterion=survive -> strict 1000-step version
 
 env:
   wrappers:

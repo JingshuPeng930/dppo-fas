@@ -76,6 +76,13 @@ def test_episode_success():
     assert list(episode_success(ret, term, "survive_and_return", 3000)) == [False, True, True]
     with pytest.raises(ValueError):
         episode_success(ret, term, "return")
+    # survive_steps: success iff not fallen within min_steps (time-limit episodes always succeed)
+    lens = np.array([150, 1000, 400])
+    assert list(episode_success(ret, term, "survive_steps", ep_len=lens, min_steps=300)) == [False, True, True]
+    assert list(episode_success(ret, np.array([True, True, True]), "survive_steps",
+                                ep_len=lens, min_steps=300)) == [False, True, True]
+    with pytest.raises(ValueError):
+        episode_success(ret, term, "survive_steps")
 
 
 # --------------------------------------------------------------------- wrapper
@@ -292,7 +299,7 @@ def test_fas_agent_hooks(tmp_path):
     a.venv = FakeVenv(4)
     a.sampler = FailureAwareSampler(6, alpha=1.0, beta=1.0, delta=0.01, ema_rate=1.0)
     a.fas_update_from = {"eval", "train"}
-    a.success_criterion, a.success_return_threshold = "survive", None
+    a.success_criterion, a.success_return_threshold, a.success_min_steps = "survive", None, None
     a.eval_schedule_len = 3
     a._eval_offset = 0
     a._episodes, a._probs, a.fas_history = [], a.sampler.probs(), []

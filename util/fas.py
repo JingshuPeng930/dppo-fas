@@ -140,10 +140,13 @@ class FailureAwareSampler:
             setattr(self, k, float(d[k]))
 
 
-def episode_success(ep_return, terminated, criterion="survive", return_threshold=None):
+def episode_success(ep_return, terminated, criterion="survive", return_threshold=None,
+                    ep_len=None, min_steps=None):
     """Binary success for locomotion tasks (no native success signal).
 
     survive            -- reached the time limit without falling (hopper / walker2d)
+    survive_steps      -- did not fall within the first `min_steps` env steps
+                          (ep_len >= min_steps, or reached the time limit)
     return             -- episode return >= return_threshold (halfcheetah never terminates)
     survive_and_return -- both
     """
@@ -151,6 +154,10 @@ def episode_success(ep_return, terminated, criterion="survive", return_threshold
     terminated = np.asarray(terminated, dtype=bool)
     if criterion == "survive":
         return ~terminated
+    if criterion == "survive_steps":
+        if ep_len is None or min_steps is None:
+            raise ValueError("criterion 'survive_steps' needs ep_len and min_steps")
+        return (~terminated) | (np.asarray(ep_len) >= min_steps)
     if return_threshold is None:
         raise ValueError(f"criterion '{criterion}' needs return_threshold")
     if criterion == "return":

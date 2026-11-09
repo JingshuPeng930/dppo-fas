@@ -34,6 +34,7 @@ class EvalDiffusionDisturbanceAgent(EvalAgent):
         self.n_per_cond = cfg.n_episodes_per_condition
         self.success_criterion = cfg.success.criterion
         self.success_return_threshold = cfg.success.get("return_threshold", None)
+        self.success_min_steps = cfg.success.get("min_steps", None)
         self.result_json_path = self.result_path.replace(".npz", ".json")
 
     def run(self):
@@ -78,7 +79,10 @@ class EvalDiffusionDisturbanceAgent(EvalAgent):
             log.warning(f"Only {len(episodes)}/{len(queue)} episodes finished")
 
         cond, ret, length, term = map(np.array, zip(*episodes))
-        success = episode_success(ret, term, self.success_criterion, self.success_return_threshold)
+        success = episode_success(
+            ret, term, self.success_criterion, self.success_return_threshold,
+            ep_len=length, min_steps=self.success_min_steps,
+        )
         count = np.bincount(cond, minlength=C)
         with np.errstate(invalid="ignore", divide="ignore"):
             succ_c = np.bincount(cond, weights=success.astype(float), minlength=C) / count
