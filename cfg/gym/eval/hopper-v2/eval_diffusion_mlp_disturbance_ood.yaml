@@ -13,8 +13,8 @@ env:
       # training-condition bins C = cartesian product -> held-out values (generalization)
       condition_space:
         mass_scale: [0.6, 1.75]                # x nominal torso mass
-        friction_scale: [0.35, 2.0]            # x nominal sliding friction (all geoms)
-        impulse_force: [0.0, 450.0]            # [N] horizontal push on torso
+        friction_scale: [0.35, 1.2]            # v2 (v1: 2.0, unsolvable)
+        impulse_force: [0.0, 375.0]            # [N] v2 (v1: 450, ~2% success for every policy)
       impulse_prob: 0.01        # per env step chance to start a push
       impulse_duration: 5       # env steps a push is held (5 x 0.008s for hopper)
       jitter: 0.0               # optional multiplicative noise inside a bin
