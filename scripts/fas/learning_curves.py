@@ -90,7 +90,7 @@ def main():
 
     max_common = min(int(c[0][-1]) for _, cs, _ in results.values() for c in cs)
     print(f"\n{'method':10s} {'AUC balanced':>16s} {'AUC hard':>16s} {'final balanced':>16s} {'final hard':>14s}"
-          + (f"   (AUC over itr <= {max_common})" if args.common_itr else ""))
+          + (f"   (AUC and final at itr <= {max_common})" if args.common_itr else ""))
     rows = []
     for label, (agg, curves, _) in results.items():
         def per_seed(idx):
@@ -100,8 +100,9 @@ def main():
                 v.append(np.nanmean(c[idx][m]))
             return np.mean(v), np.std(v)
         ab, ah = per_seed(1), per_seed(2)
-        fb = [c[1][-1] for c in curves]
-        fh = [c[2][-1] for c in curves]
+        last = (lambda c: c[0] == max_common) if args.common_itr else (lambda c: c[0] == c[0][-1])
+        fb = [c[1][last(c)][0] for c in curves]
+        fh = [c[2][last(c)][0] for c in curves]
         print(f"{label:10s} {ab[0]:8.3f} ± {ab[1]:.3f} {ah[0]:8.3f} ± {ah[1]:.3f} "
               f"{np.mean(fb):8.3f} ± {np.std(fb):.3f} {np.nanmean(fh):7.3f} ± {np.nanstd(fh):.3f}")
         for i, it in enumerate(agg["itr"]):
@@ -125,7 +126,8 @@ def main():
     for ax, (key, title) in zip(axes, panels):
         for color, (label, (agg, curves, _)) in zip(COLORS, results.items()):
             m, s = agg[f"{key}_m"], agg[f"{key}_s"]
-            ax.plot(agg["itr"], m, color=color, lw=2, label=f"{label} (n={len(curves)})")
+            ax.plot(agg["itr"], m, color=color, lw=2, label=f"{label} (n={agg['n'].min()}-{agg['n'].max()} seeds)" if agg["n"].min() != agg["n"].max()
+                    else f"{label} (n={len(curves)} seeds)")
             ax.fill_between(agg["itr"], m - s, m + s, color=color, alpha=0.15, lw=0)
         ax.set_title(title, fontsize=11)
         ax.set_xlabel("fine-tuning iteration (80k env steps each)")
