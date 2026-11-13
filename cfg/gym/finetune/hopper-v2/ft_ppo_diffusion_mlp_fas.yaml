@@ -7,7 +7,8 @@ defaults:
 
 _target_: agent.finetune.train_ppo_diffusion_fas_agent.TrainPPODiffusionFASAgent
 method: fas
-name: ${env_name}_ppo_diffusion_mlp_${method}_a${fas.alpha}_b${fas.beta}_ta${horizon_steps}_td${denoising_steps}_tdf${ft_denoising_steps}
+grid: v2            # disturbance grid version (v1 had friction 1.5), part of run names
+name: ${env_name}_ppo_diffusion_mlp_${method}_g${grid}_a${fas.alpha}_b${fas.beta}_ta${horizon_steps}_td${denoising_steps}_tdf${ft_denoising_steps}
 
 env:
   wrappers:
@@ -17,7 +18,9 @@ env:
       # training-condition bins C = cartesian product -> 4 x 3 x 3 = 36 bins
       condition_space:
         mass_scale: [0.75, 1.0, 1.25, 1.5]     # x nominal torso mass
-        friction_scale: [0.5, 1.0, 1.5]        # x nominal sliding friction (all geoms)
+        # v2: friction >= 1.25 is a cliff the policy never learns (0-10% before and after
+        #     fine-tuning); 1.5 wasted 1/3 of the grid in grid v1 = [0.5, 1.0, 1.5]
+        friction_scale: [0.5, 1.0, 1.15]       # x nominal sliding friction (all geoms)
         impulse_force: [0.0, 150.0, 300.0]     # [N] horizontal push on torso
       impulse_prob: 0.01        # per env step chance to start a push
       impulse_duration: 5       # env steps a push is held (5 x 0.008s for hopper)

@@ -35,6 +35,8 @@ The two arms share the wrappers, bins, seeds, budget and hyperparameters.
 | `fas` | `ft_ppo_diffusion_mlp_fas` | 36 bins, p(c) from Eq. 2 (default α=1, β=0.5, δ=0.05) |
 
 Bins: torso mass ×{0.75, 1.0, 1.25, 1.5} × friction ×{0.5, 1.0, 1.5} × push force {0, 150, 300} N.
+
+**hopper uses grid v2: friction ×{0.5, 1.0, 1.15}.** In grid v1, friction ≥1.25 was a cliff: 0–10% success for the pretrained, uniform and FAS policies alike, so 12 of 36 bins were unlearnable and FAS spent its extra samples there. The v2 OOD grid uses friction {0.35, 1.2} and push {0, 375} N. Run names carry `_gv2`.
 Pushes happen with probability 0.01 per step and last 5 steps.
 
 **Success:**
