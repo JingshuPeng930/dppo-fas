@@ -137,7 +137,7 @@ def main():
         for sp in ("left", "bottom"):
             ax.spines[sp].set_color("#9c9a93")
     axes[0].set_ylabel("success rate (mean ± std over seeds)")
-    axes[0].legend(frameon=False, loc="upper left")
+    axes[0].legend(frameon=False, loc="lower right", fontsize=9)
     if args.title:
         fig.suptitle(args.title, fontsize=12)
     fig.tight_layout()
