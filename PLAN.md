@@ -12,7 +12,7 @@
 | 去看 PLR、Active Domain Randomization 等 adaptive curriculum 工作 | Related Work 里加一节"自动课程 / 环境优先级"。PLR、ADR、TSCL、ALP-GMM、Goal-GAN 中的打分方式，能放进同一个采样框架的，就作为 baseline 实现（见第 2 节） |
 | 只看失败率未必是最好的标准，几乎总失败的条件学习信号可能很弱 | **我们的数据已经支持这一点**：hopper 最难的 bin 在预训练时成功率只有 7.5%，FAS 没有任何提升；walker2d 最难的 bin 成功率约 60%，能学会，FAS 提升显著（t = 3.8）。报告要把这一点当作核心发现 |
 | 应该和"中等难度 / 能力边界"以及"学习进度"类课程比较，而不只是和 uniform 比 | 新增 frontier（边界）采样和 learning-progress（学习进度）采样两个 baseline，再加一个 PLR 风格的 value-error 采样。三者都用和 FAS 相同的 p(c) 公式，只换打分函数，这样比较才公平 |
-| 引用了 "SGS" | **待确认**：需要组员给出 SGS 的具体论文，我不想猜 |
+| 引用了 "SGS" | 已找到：Success Guided Sampling，Zhang et al.，"A Balanced Data Diet: Addressing the Exploration Bottleneck in Mega-Scale RL for Robot Control"，CoRL 2026，arXiv 2610.12465。它用以目标成功率 t 为峰值的 Beta 核打分，再取 softmax(log(K+ε)/T)。我们按原文公式实现，即 `fas.score=frontier`，β=1，t=0.66，κ=5，T=2，ε=1e-8（原文给 locomotion 的默认值）。和原文的区别：成功率用 EMA 估计，而不是最近 100 个回合的滑动窗口 |
 
 调整后的叙事：**不是"FAS 比 uniform 好"，而是"在 DPPO 微调里，采样分数应该衡量什么？什么条件下优先采失败的环境才有用？"** 这样 proposal 原本的 RQ 保持不变，只是把 RQ1 的比较对象扩大了。
 
@@ -29,7 +29,10 @@
 | RQ2：α/β 强度扫描 | 部分完成（α=1/β=0.5 对 α=3/β=0.9） |
 | RQ2：奖励稀疏度、critic error | 未开始 |
 | RQ3：RFT | 未开始 |
-| LEGO | 未开始 |
+| LEGO | 由其他组员负责，不在本计划范围内 |
+| 第一阶段：SGS 和 learning progress 采样，walker2d 和 hopper v2 各 3 个 seed | **11-13 23:30 开始跑**（tmux `fas_{walker2d,hopper}_{sgs,lp}_s{0,1,2}`），代码见 commit 3367bef |
+
+截止时间：大约两周后（11-27 前后），所以 PLR value_error 打分和稀疏奖励包装器都放在可选项里。
 
 ---
 
@@ -52,7 +55,8 @@
 
 ### 2.2 实验
 - **任务：**walker2d（FAS 有效）、hopper grid v2（FAS 无效，是检验 frontier 采样的关键场景）、halfcheetah。
-- **方法：**frontier、progress（以及 value_error），每个 3 个 seed，200 轮，α=3、β=0.9，和 FAS α=3 保持一致。uniform 和 FAS 复用已有结果。
+- **方法：**`sgs`（frontier，β=1，按 SGS 原文设置）和 `lp`（progress，α=1，β=0.8，即 80% 按学习进度、20% 均匀，与 ALP-GMM 一致），以及可选的 value_error，每个 3 个 seed，200 轮。uniform 和 FAS α=3 复用已有结果。
+- **按预训练策略的成功率模拟采样分布：**在 hopper v2 上，FAS α=3 把 58% 的概率放在成功率低于 0.2 的 bin，SGS 只放 5%；在 walker2d 和 halfcheetah 上，没有成功率低于 0.2 的 bin，两者都把约 80–95% 的概率放在成功率 0.2–0.8 之间的 bin。因此 hopper 是区分两种采样的关键任务。
 - **规模：**先做 walker2d 和 hopper，2 种打分 × 2 个任务 × 3 个 seed = 12 个任务，gpu3 同时跑 9–12 个，约 6–8 小时。再加 halfcheetah 6 个任务。
 - **小调参：**frontier 在 walker2d 上补跑 α=1，避免因为 α 选得不合适而对它不公平。
 
@@ -119,7 +123,7 @@ proposal 原文：从原始 checkpoint 出发，只用 DPPO 发现的成功轨�
 | 6 | 分析图表和报告 | 1–2 天 | – |
 | – | LEGO | 团队决定 | – |
 
-## 8. 需要团队确认的问题
-1. 助教提到的 SGS 具体是哪篇论文？
-2. 报告截止日期，用来决定 LEGO 和 value_error 打分的取舍。
-3. LEGO 由谁负责，是否还保留在报告范围内？
+## 8. 已确认（11-13）
+1. SGS 的论文已找到，见第 0 节。
+2. 截止时间大约两周后。
+3. LEGO 由其他组员负责。
