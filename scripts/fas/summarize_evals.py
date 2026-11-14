@@ -4,10 +4,13 @@ import json, glob, os, sys, collections
 import numpy as np
 env = sys.argv[1]
 base = os.path.expanduser("~/dppo_fas/log/gym-eval-disturbance")
-for split_dir in sorted(glob.glob(f"{base}/{env}_eval_disturbance_*_tdf10")):
-    split = split_dir.split("_eval_disturbance_")[1].replace("_ta4_td20_tdf10", "")
+splits = collections.defaultdict(list)  # RL checkpoints are evaluated with tdf10, pretrained / RFT with tdf0
+for d in glob.glob(f"{base}/{env}_eval_disturbance_*_tdf*"):
+    splits[d.split("_eval_disturbance_")[1].rsplit("_ta4_td20_tdf", 1)[0]].append(d)
+for split in sorted(splits):
     latest = {}
-    for f in sorted(glob.glob(f"{split_dir}/*/result.json")):
+    files = [f for d in splits[split] for f in glob.glob(f"{d}/*/result.json")]
+    for f in sorted(files, key=os.path.getmtime):
         r = json.load(open(f)); latest[r["base_policy_path"]] = r["summary"]
     groups = collections.defaultdict(dict)
     for p, s in latest.items():
