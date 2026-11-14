@@ -32,6 +32,12 @@ fas:
   delta: 0.05         # smoothing, keeps solved bins sampleable
   ema_rate: 0.3       # weight on the newest per-bin failure estimate
   init_score: 0.5     # prior failure score before a bin is observed
+  score: failure      # failure (FAS) | frontier (SGS, peaks at success=target) | progress (|fast-slow EMA|)
+  target: 0.66        # frontier: target success rate t (SGS locomotion default)
+  kappa: 5.0          # frontier: Beta-kernel concentration
+  temperature: 2.0    # frontier: softmax temperature T
+  eps: 1.0e-8         # frontier: kernel floor
+  ema_slow: 0.1       # progress: rate of the slow failure EMA
   update_from: [eval, train]   # which episodes update s_c
   eval_schedule_len: 16        # round-robin conditions per env during eval iterations
   success:

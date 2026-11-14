@@ -69,6 +69,50 @@ def test_sampler_state_dict_roundtrip():
     np.testing.assert_allclose(s2.probs(), s.probs())
 
 
+def test_sampler_frontier_matches_sgs():
+    """score=frontier, beta=1 is SGS: softmax(log(K + eps) / T) over the Beta kernel K."""
+    t, kappa, T, eps = 0.66, 5.0, 2.0, 1e-8
+    s = FailureAwareSampler(4, score="frontier", beta=1.0, target=t, kappa=kappa, temperature=T, eps=eps,
+                            ema_rate=1.0)
+    s.update([0, 1, 1, 1, 2, 2, 2, 3], [False, True, False, True, True, True, True, True])
+    q = np.array([0.0, 2 / 3, 1.0, 1.0])  # success rates
+    K = (q + eps) ** (kappa * t) * (1 - q + eps) ** (kappa * (1 - t))
+    logits = np.log(K + eps) / T
+    expected = np.exp(logits - logits.max()) / np.exp(logits - logits.max()).sum()
+    np.testing.assert_allclose(s.probs(), expected, rtol=1e-6)
+    assert s.probs()[1] > 0.99  # mass on the bin at the target success rate, not on solved/failed bins
+
+
+def test_sampler_frontier_peaks_at_target():
+    s = FailureAwareSampler(5, score="frontier", beta=1.0, target=0.5, kappa=5.0, ema_rate=1.0)
+    s.scores[:] = 1 - np.array([0.0, 0.25, 0.5, 0.75, 1.0])
+    p = s.probs()
+    assert p.argmax() == 2 and p[1] == pytest.approx(p[3])
+
+
+def test_sampler_progress():
+    s = FailureAwareSampler(3, score="progress", alpha=1.0, beta=1.0, delta=0.05, ema_rate=0.5, ema_slow=0.1)
+    s.update([0, 1, 2], [False, False, False])  # all fail at first
+    np.testing.assert_allclose(s.probs(), np.full(3, 1 / 3))  # no progress yet -> uniform
+    s.update([0, 1, 2], [True, False, False])  # bin 0 starts succeeding
+    p = s.probs()
+    lp = np.array([0.5 - 0.1, 0.0, 0.0])  # fast EMA 1->0.5, slow 1->0.9
+    w = lp / lp.max() + 0.05
+    np.testing.assert_allclose(p, w / w.sum())
+    assert p[0] > p[1] == p[2]
+
+
+def test_sampler_failure_unchanged_and_old_state_dict():
+    s = FailureAwareSampler(3, alpha=2.0, beta=0.7, ema_rate=1.0)
+    s.update([0, 1, 2], [True, False, False])
+    old = {k: v for k, v in s.state_dict().items()
+           if k in ("scores", "n_observed", "alpha", "beta", "delta", "ema_rate")}
+    s2 = FailureAwareSampler(3)
+    s2.load_state_dict(old)  # checkpoint written before the score option existed
+    assert s2.score == "failure"
+    np.testing.assert_allclose(s2.probs(), s.probs())
+
+
 def test_episode_success():
     ret, term = np.array([100.0, 5000.0, 4000.0]), np.array([True, False, False])
     assert list(episode_success(ret, term, "survive")) == [False, True, True]
