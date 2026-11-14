@@ -47,6 +47,12 @@ class TrainPPODiffusionFASAgent(TrainPPODiffusionAgent):
             delta=fas_cfg.delta,
             ema_rate=fas_cfg.ema_rate,
             init_score=fas_cfg.get("init_score", 0.5),
+            score=fas_cfg.get("score", "failure"),
+            target=fas_cfg.get("target", 0.66),
+            kappa=fas_cfg.get("kappa", 5.0),
+            temperature=fas_cfg.get("temperature", 2.0),
+            eps=fas_cfg.get("eps", 1e-8),
+            ema_slow=fas_cfg.get("ema_slow", 0.1),
         )
         self.fas_update_from = set(fas_cfg.get("update_from", ["eval", "train"]))
         assert self.fas_update_from <= {"eval", "train"}, self.fas_update_from
@@ -61,7 +67,7 @@ class TrainPPODiffusionFASAgent(TrainPPODiffusionAgent):
         self.fas_history_path = os.path.join(self.logdir, "fas_history.pkl")
         log.info(
             f"FAS: {self.n_conditions} condition bins over {self.cond_space.names}, "
-            f"alpha={self.sampler.alpha} beta={self.sampler.beta} delta={self.sampler.delta} "
+            f"score={self.sampler.score} alpha={self.sampler.alpha} beta={self.sampler.beta} delta={self.sampler.delta} "
             f"ema_rate={self.sampler.ema_rate} update_from={sorted(self.fas_update_from)}"
         )
 
