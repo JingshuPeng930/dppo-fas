@@ -1,0 +1,73 @@
+# RQ3: rejection-sampling fine-tuning (RFT). Starts from the same pretrained checkpoint as DPPO and
+# imitates (diffusion BC loss, no policy gradient) the successful episodes a DPPO / DPPO-FAS run saved
+# with fas.save_success_trajs=True. No new env interaction: same budget as the source RL run.
+#   bash scripts/fas/rft.sh halfcheetah-v2 <label> "<run dir glob>" <seed>
+defaults:
+  - _self_
+hydra:
+  run:
+    dir: ${logdir}
+_target_: agent.pretrain.train_diffusion_agent.TrainDiffusionAgent
+
+source: unnamed           # label of the trajectory source (e.g. fas_a3, uniform), part of the run name
+traj_dirs: ???            # fine-tuning run dir(s) / glob(s) holding success_trajs/
+max_itr: null             # only use episodes collected up to this RL iteration (null = all)
+name: ${env}_rft_${source}_ta${horizon_steps}_td${denoising_steps}
+logdir: ${oc.env:DPPO_LOG_DIR}/gym-rft/${name}/${now:%Y-%m-%d}_${now:%H-%M-%S}_${seed}
+base_policy_path: ${oc.env:DPPO_LOG_DIR}/gym-pretrain/halfcheetah-medium-v2_pre_diffusion_mlp_ta4_td20/2024-06-12_23-04-42/checkpoint/state_3000.pt
+
+seed: 42
+device: cuda:0
+env: halfcheetah-medium-v2
+obs_dim: 17
+action_dim: 6
+denoising_steps: 20
+horizon_steps: 4
+cond_steps: 1
+
+wandb: null
+
+train:
+  n_epochs: 10
+  batch_size: 1024
+  learning_rate: 1e-4     # fine-tuning a pretrained model: 10x below the pretraining peak lr
+  weight_decay: 1e-6
+  lr_scheduler:
+    first_cycle_steps: 10
+    warmup_steps: 1
+    min_lr: 1e-4          # constant lr, like the DPPO actor
+  save_model_freq: 5
+  epoch_start_ema: 1000000  # no EMA: the saved "ema" weights equal the trained weights
+
+model:
+  _target_: model.diffusion.diffusion.DiffusionModel
+  network_path: ${base_policy_path}
+  predict_epsilon: True
+  denoised_clip_value: 1.0
+  network:
+    _target_: model.diffusion.mlp_diffusion.DiffusionMLP
+    horizon_steps: ${horizon_steps}
+    action_dim: ${action_dim}
+    cond_dim: ${eval:'${obs_dim} * ${cond_steps}'}
+    time_dim: 16
+    mlp_dims: [512, 512, 512]
+    activation_type: ReLU
+    out_activation_type: Identity
+    use_layernorm: False
+    residual_style: True
+  horizon_steps: ${horizon_steps}
+  obs_dim: ${obs_dim}
+  action_dim: ${action_dim}
+  denoising_steps: ${denoising_steps}
+  device: ${device}
+
+ema:
+  decay: 0.995
+
+train_dataset:
+  _target_: agent.dataset.rft.SuccessChunkDataset
+  run_dirs: ${traj_dirs}
+  horizon_steps: ${horizon_steps}
+  cond_steps: ${cond_steps}
+  max_itr: ${max_itr}
+  device: ${device}

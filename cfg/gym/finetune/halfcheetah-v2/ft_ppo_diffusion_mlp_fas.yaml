@@ -35,6 +35,8 @@ fas:
   temperature: 2.0    # frontier: softmax temperature T
   eps: 1.0e-8         # frontier: kernel floor
   ema_slow: 0.1       # progress: rate of the slow failure EMA
+  save_success_trajs: false   # RQ3: write successful train episodes to <logdir>/success_trajs/ for RFT
+  traj_drop_last: 25          # chunks dropped from the end of a terminated-but-successful episode
   update_from: [eval, train]   # which episodes update s_c
   eval_schedule_len: 16        # round-robin conditions per env during eval iterations
   success:

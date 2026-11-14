@@ -349,6 +349,7 @@ def test_fas_agent_hooks(tmp_path):
     a._episodes, a._probs, a.fas_history = [], a.sampler.probs(), []
     a.fas_history_path = str(tmp_path / "fas_history.pkl")
     a.use_wandb, a.itr = False, 0
+    a.save_success_trajs, a._prev_eval = False, False
 
     a.on_iteration_start(eval_mode=True)
     covered = {c for s in a.venv.schedules for c in s}
@@ -372,6 +373,66 @@ def test_fas_agent_hooks(tmp_path):
     with open(a.fas_history_path, "rb") as f:
         hist = pickle.load(f)
     assert hist["history"][0]["source"] == "eval" and len(hist["history"][0]["cond"]) == 6
+
+
+def test_fas_agent_saves_success_trajs(tmp_path):
+    """Successful train episodes are written as (obs, chunk) pairs; eval-tainted and failed ones are not."""
+    pytest.importorskip("torch")
+    from agent.dataset.rft import SuccessChunkDataset
+    from agent.finetune.train_ppo_diffusion_fas_agent import TrainPPODiffusionFASAgent
+
+    E, obs_dim, H, A = 2, 3, 4, 2
+    a = object.__new__(TrainPPODiffusionFASAgent)
+    a.cond_space = ConditionSpace({"mass_scale": [1.0, 1.5]})
+    a.n_conditions, a.n_envs, a.venv = 2, E, FakeVenv(E)
+    a.sampler = FailureAwareSampler(2, beta=0.0)
+    a.fas_update_from = {"eval", "train"}
+    a.success_criterion, a.success_return_threshold, a.success_min_steps = "survive_steps", None, 3
+    a.eval_schedule_len, a._eval_offset = 2, 0
+    a._episodes, a._probs, a.fas_history = [], a.sampler.probs(), []
+    a.fas_history_path = str(tmp_path / "fas_history.pkl")
+    a.use_wandb, a.itr, a.reset_at_iteration = False, 0, False
+    a.save_success_trajs, a.traj_drop_last = True, 1
+    a.traj_dir = str(tmp_path / "run" / "success_trajs")
+    os.makedirs(a.traj_dir)
+    a._traj_buf, a._traj_out, a._n_saved_eps, a._prev_eval = [None] * E, [], 0, False
+    a.act_steps = a.horizon_steps = H
+
+    def info(c, ln, term):
+        return {"fas_ep_cond": np.array([c]), "fas_ep_return": np.array([1.0]),
+                "fas_ep_len": np.array([ln]), "fas_ep_terminated": np.array([term])}
+
+    def step(t, infos, done, eval_mode):
+        obs = np.full((E, 1, obs_dim), float(t))
+        act = np.full((E, H, A), float(t))
+        a.on_env_step(t, infos, np.array(done), eval_mode, obs=obs, action=act)
+
+    # eval iteration: env 0 starts an episode that continues into the next train iteration
+    a.on_iteration_start(eval_mode=True)
+    step(0, [{}, {}], [False, False], True)
+    a.on_rollout_end(eval_mode=True)
+    a.itr = 1
+    a.on_iteration_start(eval_mode=False)  # no reset -> in-progress episodes are dropped
+    step(1, [{}, {}], [False, False], False)
+    step(2, [info(0, 20, False), info(1, 2, True)], [True, True], False)  # tainted ends; nothing saved
+    step(3, [{}, {}], [False, False], False)
+    step(4, [{}, {}], [False, False], False)
+    # env 0: clean 3-chunk episode in bin 1, survived 30 >= 3 steps then fell (success, last chunk
+    # dropped); env 1: fell after 2 env steps (failure)
+    step(5, [info(1, 30, True), info(0, 2, True)], [True, True], False)
+    a.on_rollout_end(eval_mode=False)
+
+    files = os.listdir(a.traj_dir)
+    assert files == ["itr_0001.npz"]
+    z = np.load(os.path.join(a.traj_dir, files[0]))
+    # 3 recorded chunks (steps 3, 4, 5) minus traj_drop_last=1 for the terminated episode
+    np.testing.assert_array_equal(z["obs"][:, 0, 0], [3.0, 4.0])
+    assert z["act"].shape == (2, H, A) and list(z["cond"]) == [1, 1] and len(z["episodes"]) == 1
+
+    ds = SuccessChunkDataset(str(tmp_path / "run"), horizon_steps=H, cond_steps=1, device="cpu")
+    assert len(ds) == 2
+    b = ds[1]
+    assert b.actions.shape == (H, A) and b.conditions["state"].shape == (1, obs_dim)
 
 
 def test_gym_config_targets_exist():

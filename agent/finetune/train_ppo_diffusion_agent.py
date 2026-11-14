@@ -48,7 +48,8 @@ class TrainPPODiffusionAgent(TrainPPOAgent):
     def on_iteration_start(self, eval_mode):
         pass
 
-    def on_env_step(self, step, info_venv, done_venv, eval_mode):
+    def on_env_step(self, step, info_venv, done_venv, eval_mode, obs=None, action=None):
+        """obs: policy input (n_envs, cond_steps, obs_dim); action: executed chunk (n_envs, act_steps, act_dim)."""
         pass
 
     def on_rollout_end(self, eval_mode):
@@ -143,7 +144,10 @@ class TrainPPODiffusionAgent(TrainPPOAgent):
                     info_venv,
                 ) = self.venv.step(action_venv)
                 done_venv = terminated_venv | truncated_venv
-                self.on_env_step(step, info_venv, done_venv, eval_mode)
+                self.on_env_step(
+                    step, info_venv, done_venv, eval_mode,
+                    obs=prev_obs_venv["state"], action=action_venv,
+                )
                 if self.save_full_observations:  # state-only
                     obs_full_venv = np.array(
                         [info["full_obs"]["state"] for info in info_venv]

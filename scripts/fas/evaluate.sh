@@ -1,7 +1,7 @@
 #!/bin/bash
 # Evaluate a policy on the fixed disturbance test grid (identical for all methods).
 #   bash scripts/fas/evaluate.sh <task> pretrained            [train|ood] [overrides...]
-#   bash scripts/fas/evaluate.sh <task> <path/to/state_X.pt>  [train|ood] [overrides...]
+#   bash scripts/fas/evaluate.sh <task> <path/to/state_X.pt>  [train|ood] [overrides...]   (DPPO or RFT checkpoint)
 # Results: $DPPO_LOG_DIR/gym-eval-disturbance/<name>/<time>/result.json
 set -e
 TASK=$1; CKPT=$2; GRID=${3:-train}; shift $(( $# < 3 ? $# : 3 ))
@@ -13,6 +13,8 @@ CFG=eval_diffusion_mlp_disturbance
 
 if [ "$CKPT" = "pretrained" ]; then
   ARGS=(ft_denoising_steps=0)
+elif [[ "$(realpath "$CKPT")" == */gym-rft/* || "$(realpath "$CKPT")" == */gym-pretrain* ]]; then
+  ARGS=(base_policy_path=$(realpath "$CKPT") ft_denoising_steps=0)   # RFT / pretrained = plain diffusion policy
 else
   ARGS=(base_policy_path=$(realpath "$CKPT") ft_denoising_steps=10)
 fi
