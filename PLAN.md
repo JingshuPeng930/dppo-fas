@@ -32,6 +32,10 @@
 | LEGO | 由其他组员负责，不在本计划范围内 |
 | 第一阶段：SGS 和 learning progress 采样，walker2d 和 hopper v2 各 3 个 seed | **11-13 23:30 开始跑**（tmux `fas_{walker2d,hopper}_{sgs,lp}_s{0,1,2}`），代码见 commit 3367bef |
 
+| halfcheetah RQ1（3 个 seed） | 完成：FAS α=3 0.777 对 uniform 0.769 对 DPPO 0.649（训练网格），打平 |
+| **基线修正（11-14）** | 预训练行改用 EMA 权重（DPPO 实际的初始化），详见 FAS_README 的 quirks 一节 |
+| 第三阶段 RQ3：保存轨迹，重跑 walker2d 的 uniform / FAS α=3 / 冻结预训练策略各 3 个 seed | **11-14 00:15 开始跑**（tmux `fas_walker2d_rq3{uniform,fas,frozen}_s{0,1,2}`），完成后运行 `scripts/fas/rft.sh` |
+
 截止时间：大约两周后（11-27 前后），所以 PLR value_error 打分和稀疏奖励包装器都放在可选项里。
 
 ---
