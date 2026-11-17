@@ -37,14 +37,15 @@ METHODS = collections.OrderedDict([
     ("sgs", ("SGS", "#1baf7a")),
     ("lp", ("Learning progress", "#9b59b6")),
     ("plr", ("PLR (value loss)", "#d6a514")),
+    ("fasp", ("FAS + LP gate", "#8c564b")),
 ])
 REF = {"ema": ("Pretrained", "#b8b8b8"), "dppo": ("DPPO (nominal)", "#6e6e6e")}
 
 TASKS = collections.OrderedDict([
     ("walker2d", dict(env="walker2d-medium-v2", grid="", runs={
-        "uniform": "uniform_ta4", "fas": "fas_a3.0_b0.9_ta4", "sgs": "sgs_a1.0", "lp": "lp_a1.0", "plr": "plr_a3.0_b0.9_ta4"})),
+        "uniform": "uniform_ta4", "fas": "fas_a3.0_b0.9_ta4", "sgs": "sgs_a1.0", "lp": "lp_a1.0", "plr": "plr_a3.0_b0.9_ta4", "fasp": "fasp1_a3.0"})),
     ("hopper", dict(env="hopper-medium-v2", grid="_gv2", runs={
-        "uniform": "uniform_gv2_ta4", "fas": "fas_gv2_a3.0_b0.9_ta4", "sgs": "sgs_gv2", "lp": "lp_gv2", "plr": "plr_gv2_a3.0_b0.9_ta4"})),
+        "uniform": "uniform_gv2_ta4|rq3uniform_gv2_ta4", "fas": "fas_gv2_a3.0_b0.9_ta4|rq3fas_gv2_a3.0_b0.9_ta4", "sgs": "sgs_gv2", "lp": "lp_gv2", "plr": "plr_gv2_a3.0_b0.9_ta4", "fasp": "fasp1_gv2"})),
     ("halfcheetah", dict(env="halfcheetah-medium-v2", grid="", runs={
         "uniform": "uniform_ta4", "fas": "fas_a3.0_b0.9_ta4", "sgs": "sgs_a1.0", "lp": "lp_a1.0"})),
 ])
@@ -59,6 +60,52 @@ def welch_t(a, b):
     return float((a.mean() - b.mean()) / np.sqrt(a.var(ddof=1) / len(a) + b.var(ddof=1) / len(b)))
 
 
+def boot_ci(a, b, n=20000, seed=0):
+    """95% percentile-bootstrap CI of mean(a) - mean(b), resampling seeds within each group"""
+    a, b = np.asarray(a, float), np.asarray(b, float)
+    rng = np.random.default_rng(seed)
+    d = rng.choice(a, (n, len(a))).mean(1) - rng.choice(b, (n, len(b))).mean(1)
+    return float(np.percentile(d, 2.5)), float(np.percentile(d, 97.5))
+
+
+def comparisons(out):
+    """every method vs uniform per task: final train / OOD success, worst-25% bins, AUC; diff, Welch t, bootstrap CI"""
+    rows = []
+    for task, t in TASKS.items():
+        grid = t["grid"]
+        ev = {sp: load_evals(t["env"], sp + grid) for sp in ["train", "ood"]}
+
+        def metrics(key):
+            m = {}
+            for sp in ["train", "ood"]:
+                rs = [r for r in pick(ev[sp], f"{t['env']}_ppo_diffusion_mlp_{key}", "state_199.pt")
+                      if "L400" not in r["base_policy_path"]]
+                per = np.array([[c["success"] for c in r["per_condition"]] for r in rs])
+                if len(per):
+                    m[sp] = per.mean(1)
+                    m[sp + "_worst25"] = np.sort(per, 1)[:, :max(1, per.shape[1] // 4)].mean(1)
+            m["auc"] = np.array([eval_curve(d)[1].mean() for d in run_dirs(t["env"], key)])
+            return m
+        M = {m: metrics(k) for m, k in t["runs"].items()}
+        for m in M:
+            if m == "uniform":
+                continue
+            for metric in ["train", "train_worst25", "ood", "auc"]:
+                a, b = M[m].get(metric, []), M["uniform"].get(metric, [])
+                if len(a) < 2 or len(b) < 2:
+                    continue
+                lo, hi = boot_ci(a, b)
+                rows.append(dict(task=task, method=m, metric=metric, n=len(a), n_uniform=len(b),
+                                 mean=round(float(np.mean(a)), 3), uniform=round(float(np.mean(b)), 3),
+                                 diff=round(float(np.mean(a) - np.mean(b)), 3), welch_t=round(welch_t(a, b), 2),
+                                 ci95_lo=round(lo, 3), ci95_hi=round(hi, 3), ci_excludes_0=bool(lo > 0 or hi < 0)))
+    with open(f"{out}/comparisons.csv", "w") as f:
+        w = csv.DictWriter(f, fieldnames=list(rows[0]))
+        w.writeheader()
+        w.writerows(rows)
+    return rows
+
+
 def style(ax):
     ax.grid(axis="y", color="#e6e6e6", lw=0.8)
     ax.set_axisbelow(True)
@@ -71,7 +118,8 @@ def style(ax):
 
 # ----------------------------------------------------------------- learning curves
 def run_dirs(env, key):
-    ds = sorted(glob.glob(f"{FT}/{env}_ppo_diffusion_mlp_{key}*/*"))
+    """key may be "a|b": run groups with the identical training config (e.g. RQ3 source runs = extra seeds)"""
+    ds = sorted(d for k in key.split("|") for d in glob.glob(f"{FT}/{env}_ppo_diffusion_mlp_{k}*/*"))
     return [d for d in ds if os.path.exists(f"{d}/fas_history.pkl") and "L400" not in d]
 
 
@@ -157,8 +205,14 @@ def load_evals(env, split):
     return latest
 
 
+def _alts(pattern):
+    head, sep, tail = pattern.rpartition("_mlp_")
+    return [f"{head}{sep}{t}" for t in tail.split("|")] if sep and "|" in tail else [pattern]
+
+
 def pick(evals, pattern, ckpt):
-    return [r for p, r in evals.items() if f"/{pattern}" in p and p.endswith(ckpt)]
+    alts = _alts(pattern)
+    return [r for p, r in evals.items() if any(f"/{q}" in p for q in alts) and p.endswith(ckpt)]
 
 
 def per_seed(evals, env, key, ckpt="state_199.pt"):
@@ -210,42 +264,49 @@ def fig_final(out):
 
 # ----------------------------------------------------------------- RQ3
 def fig_rq3(out):
-    env = "walker2d-medium-v2"
-    fig, axes = plt.subplots(1, 2, figsize=(9, 3.2))
+    """rows: walker2d (seeds 0-2, + frozen source and demo-mix variant), hopper (source runs seeds 3-5)"""
     variants = [("RL policy", "#2a78d6"), ("RFT", "#eb6834"), ("RFT + demos (0.6)", "#f2b38f")]
-    sources = [("fas", "FAS rollouts", "fas_a3.0_b0.9_ta4", "rq3fas"), ("uniform", "Uniform rollouts", "uniform_ta4", "rq3uniform"),
-               ("frozen", "Pretrained rollouts\n(frozen)", None, "rq3frozen")]
-    for ax, split in zip(axes, ["train", "ood"]):
-        ev = load_evals(env, split)
-        ema = [r["summary"]["balanced_success"] for r in pick(ev, f"{env}_pre_diffusion_mlp_ema", "state_3000.pt")]
-        for k, (src, lab, rl_key, rq3) in enumerate(sources):
-            # RL: the source run itself (rq3 runs = same config with trajectory saving), frozen = pretrained
-            rl = per_seed(ev, env, rq3 + ("_a3.0" if src == "fas" else "_ta4"))
-            if src == "frozen":
-                rl = np.array(ema)
-            vals = [rl,
-                    np.array([r["summary"]["balanced_success"] for r in pick(ev, f"{env}_rft_{src}_clip_ta4", "state_10.pt")]),
-                    np.array([r["summary"]["balanced_success"] for r in pick(ev, f"{env}_rft_{src}_mix_ta4", "state_4.pt")])]
-            for v_i, ((vlab, col), v) in enumerate(zip(variants, vals)):
-                x = k + (v_i - 1) * 0.26
-                if len(v) == 0:
-                    continue
-                ax.bar(x, v.mean(), width=0.24, color=col, label=vlab,
-                       yerr=v.std() if len(v) > 1 else None, error_kw=dict(lw=1, capsize=2, ecolor="#444444"))
-                ax.text(x, v.mean() + (v.std() if len(v) > 1 else 0) + 0.015, f"{v.mean():.2f}", ha="center",
-                        fontsize=6.5, color="#333333")
-        ax.set_xticks(range(len(sources)))
-        ax.set_xticklabels([s[1] for s in sources], fontsize=8)
-        ax.set_ylim(0, 1.0)
-        ax.set_title(f"walker2d, {'train' if split == 'train' else 'OOD'} grid", fontsize=10, color="#222222")
-        style(ax)
-    axes[0].set_ylabel("balanced success", fontsize=9, color="#444444")
-    h, l = axes[0].get_legend_handles_labels()
+    setups = [
+        ("walker2d", "walker2d-medium-v2", "", "_clip_ta4", [
+            ("fas", "FAS rollouts", "rq3fas_a3.0"), ("uniform", "Uniform rollouts", "rq3uniform_ta4"),
+            ("frozen", "Pretrained rollouts\n(frozen)", None)]),
+        ("hopper", "hopper-medium-v2", "_gv2", "_ta4", [
+            ("fas", "FAS rollouts", "rq3fas_gv2_a3.0"), ("uniform", "Uniform rollouts", "rq3uniform_gv2_ta4")]),
+    ]
+    fig, axes = plt.subplots(2, 2, figsize=(9, 6.0))
+    for row, (task, env, grid, rft_suffix, sources) in enumerate(setups):
+        for ax, split in zip(axes[row], ["train", "ood"]):
+            ev = load_evals(env, split + grid)
+            ema = [r["summary"]["balanced_success"] for r in pick(ev, f"{env}_pre_diffusion_mlp_ema", "state_3000.pt")]
+            for k, (src, lab, rl_key) in enumerate(sources):
+                # RL: the source run itself (rq3 runs = same config with trajectory saving), frozen = pretrained
+                rl = np.array(ema) if rl_key is None else per_seed(ev, env, rl_key)
+                vals = [rl,
+                        np.array([r["summary"]["balanced_success"] for r in pick(ev, f"{env}_rft_{src}{rft_suffix}", "state_10.pt")]),
+                        np.array([r["summary"]["balanced_success"] for r in pick(ev, f"{env}_rft_{src}_mix_ta4", "state_4.pt")])]
+                for v_i, ((vlab, col), v) in enumerate(zip(variants, vals)):
+                    x = k + (v_i - 1) * 0.26
+                    if len(v) == 0:
+                        continue
+                    ax.bar(x, v.mean(), width=0.24, color=col, label=vlab,
+                           yerr=v.std() if len(v) > 1 else None, error_kw=dict(lw=1, capsize=2, ecolor="#444444"))
+                    ax.text(x, v.mean() + (v.std() if len(v) > 1 else 0) + 0.015, f"{v.mean():.2f}", ha="center",
+                            fontsize=6.5, color="#333333")
+            if ema:
+                ax.axhline(ema[0], color="#b8b8b8", lw=1, ls="--")
+            ax.set_xticks(range(len(sources)))
+            ax.set_xticklabels([s[1] for s in sources], fontsize=8)
+            ax.set_xlim(-0.6, 2.6)
+            ax.set_ylim(0, 1.0)
+            ax.set_title(f"{task}, {'train' if split == 'train' else 'OOD'} grid", fontsize=10, color="#222222")
+            style(ax)
+        axes[row, 0].set_ylabel("balanced success", fontsize=9, color="#444444")
+    h, l = axes[0, 0].get_legend_handles_labels()
     uniq = dict(zip(l, h))
     fig.legend(uniq.values(), uniq.keys(), loc="upper center", ncol=3, fontsize=8, frameon=False, bbox_to_anchor=(0.5, 1.0))
-    fig.text(0.99, 0.01, "RL policy for pretrained rollouts = the frozen pretrained (EMA) policy", ha="right",
-             fontsize=7, color="#777777")
-    fig.tight_layout(rect=(0, 0.02, 1, 0.92))
+    fig.text(0.99, 0.005, "dashed: pretrained (EMA) policy; RL policy for pretrained rollouts = the frozen pretrained policy",
+             ha="right", fontsize=7, color="#777777")
+    fig.tight_layout(rect=(0, 0.02, 1, 0.95))
     fig.savefig(f"{out}/fig_rq3.png", dpi=200)
     fig.savefig(f"{out}/fig_rq3.pdf")
 
@@ -265,9 +326,10 @@ def fig_bins(out):
         masks = [u < 0.2, (u >= 0.2) & (u <= 0.8), u > 0.8]
         for k, msk in enumerate(masks):
             for mi, (m, p) in enumerate(P.items()):
-                x = k + (mi - (len(P) - 1) / 2) * 0.2
+                bw = 0.84 / len(P)
+                x = k + (mi - (len(P) - 1) / 2) * bw
                 if msk.any():
-                    ax.bar(x, p[msk].mean(), width=0.18, color=METHODS[m][1], label=METHODS[m][0] if k == 1 else None)
+                    ax.bar(x, p[msk].mean(), width=bw * 0.9, color=METHODS[m][1], label=METHODS[m][0] if k == 1 else None)
         ax.set_xticks(range(3))
         ax.set_xticklabels([f"{g}\n{m.sum()} bins" for g, m in zip(groups, masks)], fontsize=7.5)
         ax.set_title(task, fontsize=10, color="#222222")
@@ -385,4 +447,6 @@ if __name__ == "__main__":
         print("hard", m, {k: round(float(v[k].mean()), 3) for k in ["final", "worst", "auc"]})
     for r in fig_sparse(a.out):
         print("sparse", r)
+    for r in comparisons(a.out):
+        print("cmp", r)
     print("wrote", sorted(os.listdir(a.out)))

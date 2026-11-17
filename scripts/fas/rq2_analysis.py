@@ -25,7 +25,7 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import report_figs as R  # noqa: E402
 
-LABEL = {"uniform": "uniform", "fas": "FAS a3", "fas_a1": "FAS a1", "sgs": "SGS", "lp": "LP", "plr": "PLR"}
+LABEL = {"uniform": "uniform", "fas": "FAS a3", "fas_a1": "FAS a1", "sgs": "SGS", "lp": "LP", "plr": "PLR", "fasp": "FAS+LP"}
 RUNS = {
     "walker2d": dict(R.TASKS["walker2d"]["runs"], fas_a1="fas_a1.0_b0.5_ta4"),
     "hopper": dict(R.TASKS["hopper"]["runs"], fas_a1="fas_gv2_a1.0_b0.5_ta4"),
@@ -78,6 +78,7 @@ def critic_table(critic_dir, task, env, grid):
     print(f"    {'method':8s} {'itr':>4s} {'n':>2s} {'overall':>15s} " + " ".join(f"{g:>16s}" for g, m in groups)
           + f" {'corr(err, p_bin)':>17s}")
     for m, key in RUNS[task].items():
+        key = key.split("|")[0]  # critic JSONs exist for the main seeds only
         for itr in (100, 199):
             js = [json.load(open(f)) for f in files if f"_{key}" in os.path.basename(f).split("__")[0] + "_"
                   and os.path.basename(f).endswith(f"__{itr}.json")]

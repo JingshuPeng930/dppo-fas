@@ -53,6 +53,7 @@ class TrainPPODiffusionFASAgent(TrainPPODiffusionAgent):
             temperature=fas_cfg.get("temperature", 2.0),
             eps=fas_cfg.get("eps", 1e-8),
             ema_slow=fas_cfg.get("ema_slow", 0.1),
+            lp_floor=fas_cfg.get("lp_floor", 0.25),
         )
         self.fas_update_from = set(fas_cfg.get("update_from", ["eval", "train"]))
         assert self.fas_update_from <= {"eval", "train"}, self.fas_update_from

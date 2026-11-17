@@ -493,3 +493,22 @@ def test_value_score_plr():
     t = FailureAwareSampler(4, score="value")
     t.load_state_dict(s.state_dict())
     assert np.allclose(t.values, s.values) and np.allclose(t.probs(), s.probs())
+
+
+def test_failure_progress_gates_stalled_bins():
+    """score='failure_progress': relative to plain FAS, an improving bin gains weight over a stalled always-
+    failing bin (ratio boosted by (1 + lp_floor) / lp_floor = 5); with no progress anywhere it equals FAS."""
+    s = FailureAwareSampler(3, alpha=1.0, beta=1.0, delta=0.05, ema_rate=0.5, ema_slow=0.1,
+                            score="failure_progress", lp_floor=0.25)
+    f = FailureAwareSampler(3, alpha=1.0, beta=1.0, delta=0.05, score="failure")
+    s.update([0, 1, 2], [False, False, True])
+    f.update([0, 1, 2], [False, False, True])
+    assert np.allclose(s.probs(), f.probs())  # no progress yet
+    for _ in range(3):  # bin 0 starts succeeding half the time, bin 1 keeps failing
+        s.update([0, 0, 1, 1], [True, False, False, False])
+    p = s.probs()
+    w = np.power(s.scores + s.delta, s.alpha)  # plain FAS weights at the same failure estimates
+    assert p[0] / p[1] > w[0] / w[1] * 3 and np.isclose(p.sum(), 1.0)  # improving bin boosted vs stalled
+    t = FailureAwareSampler(3, score="failure_progress")
+    t.load_state_dict(s.state_dict())
+    assert t.lp_floor == 0.25 and np.allclose(t.probs(), p)

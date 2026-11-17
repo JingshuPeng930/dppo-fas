@@ -16,6 +16,9 @@ with the per-bin weight w_c chosen by `score` (all share the EMA estimates and t
              at target success t. softmax(log(K+eps)/T) == (K+eps)^(1/T) normalized; beta=1 is SGS.
   progress : (LP_c / max LP + delta)^alpha,  LP_c = |s_c - s_c^slow|  -- absolute learning
              progress (TSCL / ALP-GMM), fast EMA (ema_rate) minus slow EMA (ema_slow).
+  failure_progress : (s_c + delta)^alpha * (LP_c / max LP + lp_floor)  -- FAS gated by learnability:
+             bins that keep failing without any change in their failure EMA (likely unlearnable) get
+             lp_floor / (1 + lp_floor) of the weight of an equally failing bin that is improving.
   value    : (v_c / max v + delta)^alpha,  v_c = EMA of the positive value loss mean_t max(A_t, 0) of the
              bin's train steps (PLR score, Jiang et al. ICML 2021), updated by update_value(); same power
              form and beta-mix as FAS so only the signal (value error vs failure) differs.
@@ -79,8 +82,8 @@ class ConditionSpace:
         return out
 
 
-SCORES = ("failure", "frontier", "progress", "value")
-_FLOAT_PARAMS = ("alpha", "beta", "delta", "ema_rate", "target", "kappa", "temperature", "eps", "ema_slow")
+SCORES = ("failure", "frontier", "progress", "value", "failure_progress")
+_FLOAT_PARAMS = ("alpha", "beta", "delta", "ema_rate", "target", "kappa", "temperature", "eps", "ema_slow", "lp_floor")
 
 
 class FailureAwareSampler:
@@ -100,6 +103,7 @@ class FailureAwareSampler:
         temperature: float = 2.0,
         eps: float = 1e-8,
         ema_slow: float = 0.1,
+        lp_floor: float = 0.25,
     ):
         assert n_bins > 0
         assert 0.0 <= beta <= 1.0, "beta must be in [0, 1]"
@@ -119,6 +123,7 @@ class FailureAwareSampler:
         self.temperature = float(temperature)
         self.eps = float(eps)
         self.ema_slow = float(ema_slow)
+        self.lp_floor = float(lp_floor)
         self.scores = np.full(n_bins, float(init_score))
         self.scores_slow = self.scores.copy()  # slow EMA, only used by score="progress"
         self.values = np.zeros(n_bins)  # EMA positive value loss, only used by score="value"
@@ -181,6 +186,10 @@ class FailureAwareSampler:
             k = np.power(q + self.eps, self.kappa * self.target) * np.power(
                 1.0 - q + self.eps, self.kappa * (1.0 - self.target))
             return np.power(k + self.eps, 1.0 / self.temperature)
+        if self.score == "failure_progress":
+            lp = np.abs(self.scores - self.scores_slow)
+            lp = lp / lp.max() if lp.max() > 0 else np.zeros_like(lp)
+            return np.power(self.scores + self.delta, self.alpha) * (lp + self.lp_floor)
         if self.score == "value":
             v = self.values / self.values.max() if self.values.max() > 0 else np.zeros_like(self.values)
             return np.power(v + self.delta, self.alpha)
