@@ -36,14 +36,15 @@ METHODS = collections.OrderedDict([
     ("fas", ("FAS (α=3)", "#eb6834")),
     ("sgs", ("SGS", "#1baf7a")),
     ("lp", ("Learning progress", "#9b59b6")),
+    ("plr", ("PLR (value loss)", "#d6a514")),
 ])
 REF = {"ema": ("Pretrained", "#b8b8b8"), "dppo": ("DPPO (nominal)", "#6e6e6e")}
 
 TASKS = collections.OrderedDict([
     ("walker2d", dict(env="walker2d-medium-v2", grid="", runs={
-        "uniform": "uniform_ta4", "fas": "fas_a3.0_b0.9_ta4", "sgs": "sgs_a1.0", "lp": "lp_a1.0"})),
+        "uniform": "uniform_ta4", "fas": "fas_a3.0_b0.9_ta4", "sgs": "sgs_a1.0", "lp": "lp_a1.0", "plr": "plr_a3.0_b0.9_ta4"})),
     ("hopper", dict(env="hopper-medium-v2", grid="_gv2", runs={
-        "uniform": "uniform_gv2_ta4", "fas": "fas_gv2_a3.0_b0.9_ta4", "sgs": "sgs_gv2", "lp": "lp_gv2"})),
+        "uniform": "uniform_gv2_ta4", "fas": "fas_gv2_a3.0_b0.9_ta4", "sgs": "sgs_gv2", "lp": "lp_gv2", "plr": "plr_gv2_a3.0_b0.9_ta4"})),
     ("halfcheetah", dict(env="halfcheetah-medium-v2", grid="", runs={
         "uniform": "uniform_ta4", "fas": "fas_a3.0_b0.9_ta4", "sgs": "sgs_a1.0", "lp": "lp_a1.0"})),
 ])
@@ -280,6 +281,96 @@ def fig_bins(out):
     fig.savefig(f"{out}/fig_bins.pdf")
 
 
+# ----------------------------------------------------------------- walker2d: harder grid & reward sparsity
+def seed_of(path):
+    return int(path.split("/checkpoint/")[0].rsplit("_", 1)[1]) if "/checkpoint/" in path else int(path.rsplit("_", 1)[1])
+
+
+def seed_metrics(env, split, key, seeds=(0, 1, 2)):
+    """per-seed final balanced success, worst-25%-bins success (state_199 eval on `split`) and eval-curve AUC"""
+    rs = [r for r in pick(load_evals(env, split), f"{env}_ppo_diffusion_mlp_{key}", "state_199.pt")
+          if "L400" not in r["base_policy_path"] and seed_of(r["base_policy_path"]) in seeds]
+    per = np.array([[c["success"] for c in r["per_condition"]] for r in rs])
+    k = max(1, per.shape[1] // 4)
+    auc = [eval_curve(d)[1].mean() for d in run_dirs(env, key) if seed_of(d) in seeds]
+    return dict(final=per.mean(1), worst=np.sort(per, 1)[:, :k].mean(1), auc=np.array(auc), per_bin=per.mean(0))
+
+
+def _bars(ax, groups, series, ylabel):
+    """groups: x labels; series: {method: [per-seed array per group]} -> bars (mean) + seed dots"""
+    n = len(series)
+    for mi, (m, vals) in enumerate(series.items()):
+        for g, v in enumerate(vals):
+            x = g + (mi - (n - 1) / 2) * 0.8 / n
+            ax.bar(x, v.mean(), width=0.8 / n * 0.9, color=METHODS[m][1], label=METHODS[m][0] if g == 0 else None)
+            ax.scatter(np.full(len(v), x), v, s=8, color="#333333", zorder=3, linewidths=0)
+    ax.set_xticks(range(len(groups)))
+    ax.set_xticklabels(groups, fontsize=8)
+    ax.set_title(ylabel, fontsize=9.5, color="#222222")
+    style(ax)
+
+
+def fig_hard(out):
+    env, keys = "walker2d-medium-v2", {"uniform": "hard_uniform", "fas": "hard_fas", "sgs": "hard_sgs"}
+    M = {m: seed_metrics(env, "hard", k) for m, k in keys.items()}
+    fig, axes = plt.subplots(1, 2, figsize=(9, 3.2), gridspec_kw=dict(width_ratios=[1.2, 1]))
+    _bars(axes[0], ["final success", "worst-25% bins", "AUC (speed)"],
+          {m: [v["final"], v["worst"], v["auc"]] for m, v in M.items()}, "harder grid: summary (3 seeds)")
+    axes[0].set_ylim(0, 0.8)
+    u = M["uniform"]["per_bin"]
+    masks = [u < 0.2, (u >= 0.2) & (u <= 0.8), u > 0.8]
+    names = ["unsolved (<0.2)", "frontier", "solved (>0.8)"]
+    _bars(axes[1], [f"{g}\n{m.sum()} bins" for g, m in zip(names, masks)],
+          {m: [np.array([v["per_bin"][msk].mean()]) for msk in masks] for m, v in M.items()},
+          "harder grid: per-bin success by difficulty")
+    axes[1].set_ylim(0, 1.05)
+    axes[0].legend(fontsize=7, frameon=False, loc="upper right")
+    fig.text(0.99, 0.01, "walker2d, grid mass 1–1.75 × friction 0.35–1 × push 150–450 N; bins grouped by uniform",
+             ha="right", fontsize=7, color="#777777")
+    fig.tight_layout()
+    fig.savefig(f"{out}/fig_hard.png", dpi=200)
+    fig.savefig(f"{out}/fig_hard.pdf")
+    return M
+
+
+def fig_sparse(out):
+    """rows: walker2d, hopper; columns: train final, worst-25%, AUC, OOD final; x: reward delay K"""
+    setups = {
+        "walker2d": ("walker2d-medium-v2", {1: {"uniform": "uniform_ta4", "fas": "fas_a3.0_b0.9_ta4"},
+                                            25: {"uniform": "sparse25_uniform", "fas": "sparse25_fas"},
+                                            100: {"uniform": "sparse100_uniform", "fas": "sparse100_fas"}}),
+        "hopper": ("hopper-medium-v2", {1: {"uniform": "uniform_gv2_ta4", "fas": "fas_gv2_a3.0_b0.9_ta4"},
+                                        25: {"uniform": "sparse25_uniform_gv2", "fas": "sparse25_fas_gv2"},
+                                        100: {"uniform": "sparse100_uniform_gv2", "fas": "sparse100_fas_gv2"}}),
+    }
+    fig, axes = plt.subplots(2, 4, figsize=(12, 5.6))
+    labels = ["K=1 (dense)", "K=25", "K=100"]
+    rows = []
+    for r, (task, (env, keys)) in enumerate(setups.items()):
+        grid = TASKS[task]["grid"]
+        M = {K: {m: seed_metrics(env, "train" + grid, k) for m, k in ks.items()} for K, ks in keys.items()}
+        O = {K: {m: seed_metrics(env, "ood" + grid, k)["final"] for m, k in ks.items()} for K, ks in keys.items()}
+        cols = [("final", "final success (train grid)"), ("worst", "worst-25% bins"), ("auc", "AUC (speed)")]
+        for ax, (metric, title) in zip(axes[r], cols):
+            _bars(ax, labels, {m: [M[K][m][metric] for K in keys] for m in ["uniform", "fas"]}, f"{task}: {title}")
+        _bars(axes[r, 3], labels, {m: [O[K][m] for K in keys] for m in ["uniform", "fas"]}, f"{task}: final success (OOD)")
+        for ax in axes[r]:  # zoom each panel to its data
+            ys = [b.get_height() for b in ax.patches] + [y for c in ax.collections for y in c.get_offsets()[:, 1]]
+            lo, hi = min(ys), max(ys)
+            ax.set_ylim(max(0, lo - 0.08), hi + 0.04)
+        for K in keys:
+            u, f = M[K]["uniform"], M[K]["fas"]
+            rows.append(f"{task} K={K}: " + "  ".join(
+                f"{k} {u[k].mean():.3f}->{f[k].mean():.3f} (t={welch_t(f[k], u[k]):.2f})" for k in ["final", "worst", "auc"])
+                + f"  ood {O[K]['uniform'].mean():.3f}->{O[K]['fas'].mean():.3f} (t={welch_t(O[K]['fas'], O[K]['uniform']):.2f})")
+    axes[0, 0].legend(fontsize=7, frameon=False, loc="upper left")
+    fig.text(0.99, 0.01, "dense reward paid every K env steps (episode return unchanged); seeds 0–2",
+             ha="right", fontsize=7, color="#777777")
+    fig.tight_layout()
+    fig.savefig(f"{out}/fig_sparse.png", dpi=200)
+    fig.savefig(f"{out}/fig_sparse.pdf")
+    return rows
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default="figs")
@@ -290,4 +381,8 @@ if __name__ == "__main__":
     fig_final(a.out)
     fig_rq3(a.out)
     fig_bins(a.out)
+    for m, v in fig_hard(a.out).items():
+        print("hard", m, {k: round(float(v[k].mean()), 3) for k in ["final", "worst", "auc"]})
+    for r in fig_sparse(a.out):
+        print("sparse", r)
     print("wrote", sorted(os.listdir(a.out)))

@@ -172,7 +172,7 @@ class FakeMujocoEnv(gym.Env):
         return np.full(3, self.t, dtype=float), 1.0, bool(done), {}
 
 
-def make_chain(tmp_path, condition_space, impulse_prob=0.0, max_steps=20):
+def make_chain(tmp_path, condition_space, impulse_prob=0.0, max_steps=20, reward_delay=1):
     from env.gym_utils.wrapper.mujoco_locomotion_lowdim import MujocoLocomotionLowdimWrapper
     from env.gym_utils.wrapper.mujoco_disturbance import MujocoDisturbanceWrapper
     from env.gym_utils.wrapper.multi_step import MultiStep
@@ -184,7 +184,7 @@ def make_chain(tmp_path, condition_space, impulse_prob=0.0, max_steps=20):
     env = MujocoLocomotionLowdimWrapper(env, normalization_path=str(norm))
     env = MujocoDisturbanceWrapper(
         env, condition_space=condition_space, impulse_prob=impulse_prob, impulse_duration=3,
-        max_episode_steps=max_steps,
+        max_episode_steps=max_steps, reward_delay=reward_delay,
     )
     env = MultiStep(env, n_obs_steps=1, n_action_steps=4, max_episode_steps=max_steps, reset_within_step=True)
     env.seed(0)
@@ -461,3 +461,35 @@ def test_gym_config_targets_exist():
             if not os.path.exists(os.path.join(REPO, *module.split(".")) + ".py"):
                 missing.add((os.path.relpath(f, REPO), target))
     assert not missing, sorted(missing)
+
+
+def test_reward_delay_pays_every_k_and_at_end(tmp_path):
+    """RQ2 sparsity: reward_delay=8 pays the accumulated reward every 8 env steps (and at the end of the
+    episode) without changing the episode return; fas_ep_return stays the dense return."""
+    from env.gym_utils.wrapper.mujoco_disturbance import MujocoDisturbanceWrapper  # noqa: F401
+    env, _ = make_chain(tmp_path, {"mass_scale": [1.0]}, max_steps=20, reward_delay=8)
+    env.reset()
+    rews, ep_ret = [], None
+    for _ in range(5):  # 5 x 4 = 20 env steps = one episode
+        _, r, term, trunc, info = env.step(np.zeros((4, 2)))
+        rews.append(float(r))
+        if "fas_ep_return" in info:
+            ep_ret = float(np.asarray(info["fas_ep_return"]).reshape(-1)[-1])
+    assert rews == [0.0, 8.0, 0.0, 8.0, 4.0], rews
+    assert sum(rews) == 20.0 and ep_ret == 20.0
+
+
+def test_value_score_plr():
+    """score='value': per-bin EMA of the positive value loss; unseen bins get the max (still sampled);
+    higher value loss -> higher p; state_dict round-trips."""
+    s = FailureAwareSampler(4, alpha=1.0, beta=1.0, delta=1e-6, ema_rate=0.5, score="value")
+    s.update_value([0, 0, 1, 1, 2], [-1.0, 2.0, 0.5, 0.5, 0.0])  # caller passes max(A, 0); negatives as given
+    assert np.allclose(s.values[:3], [0.5, 0.5, 0.0]) and s.values[3] == 0.5  # bin 3 unseen -> max
+    s.update_value([0, 1, 2, 3], [2.0, 0.0, 0.0, 0.0])
+    assert np.allclose(s.values, [1.25, 0.25, 0.0, 0.0])
+    p = s.probs()
+    assert p[0] > p[1] > p[2] and np.isclose(p.sum(), 1.0)
+    s.update([0], [True])  # failure scores still tracked for logging
+    t = FailureAwareSampler(4, score="value")
+    t.load_state_dict(s.state_dict())
+    assert np.allclose(t.values, s.values) and np.allclose(t.probs(), s.probs())

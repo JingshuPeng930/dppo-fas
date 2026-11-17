@@ -20,6 +20,10 @@ Per-step info:      fas_cond
 At episode end:     fas_ep_cond, fas_ep_return, fas_ep_len, fas_ep_terminated
 (Episode outcomes are tracked here, not in the agent, so episodes spanning a
 PPO iteration boundary are still counted.)
+
+reward_delay K > 1 (RQ2 reward sparsity): the dense reward is accumulated and paid out only every K
+env steps and at episode end (fall or time limit), so the return of an episode is unchanged and only its
+timing becomes sparse. fas_ep_return always reports the true dense return.
 """
 
 import gym
@@ -54,6 +58,7 @@ class MujocoDisturbanceWrapper(gym.Wrapper):
         impulse_duration=5,
         jitter=0.0,
         max_episode_steps=None,
+        reward_delay=1,
         **kwargs,
     ):
         super().__init__(env)
@@ -66,6 +71,7 @@ class MujocoDisturbanceWrapper(gym.Wrapper):
         self.impulse_duration = int(impulse_duration)
         self.jitter = float(jitter)
         self.max_episode_steps = max_episode_steps
+        self.reward_delay = int(reward_delay)
 
         self.mj_env = _find_mujoco_env(env)
         model = self.mj_env.model
@@ -117,6 +123,12 @@ class MujocoDisturbanceWrapper(gym.Wrapper):
         info["fas_cond"] = self.condition
 
         hit_limit = self.max_episode_steps is not None and self.ep_len >= self.max_episode_steps
+        if self.reward_delay > 1:
+            self.pending_reward += reward
+            if done or hit_limit or self.ep_len % self.reward_delay == 0:
+                reward, self.pending_reward = self.pending_reward, 0.0
+            else:
+                reward = 0.0
         if (done or hit_limit) and not self.ep_reported:
             truncated = info.get("TimeLimit.truncated", False) or (hit_limit and not done)
             info["fas_ep_cond"] = self.condition
@@ -129,6 +141,7 @@ class MujocoDisturbanceWrapper(gym.Wrapper):
     # ----------------------------------------------------------- internals
     def _reset_episode_stats(self):
         self.ep_return = 0.0
+        self.pending_reward = 0.0
         self.ep_len = 0
         self.ep_reported = False
         self.push_steps_left = 0

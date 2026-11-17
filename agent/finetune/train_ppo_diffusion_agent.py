@@ -55,6 +55,10 @@ class TrainPPODiffusionAgent(TrainPPOAgent):
     def on_rollout_end(self, eval_mode):
         pass
 
+    def on_advantages(self, advantages_trajs):
+        """GAE advantages of the train rollout, (n_steps, n_envs), before PPO normalizes them."""
+        pass
+
     def run(self):
         # Start training loop
         timer = Timer()
@@ -296,6 +300,7 @@ class TrainPPODiffusionAgent(TrainPPOAgent):
                             + self.gamma * self.gae_lambda * nonterminal * lastgaelam
                         )
                     returns_trajs = advantages_trajs + values_trajs
+                    self.on_advantages(advantages_trajs)
 
                 # k for environment step
                 obs_k = {

@@ -25,7 +25,7 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import report_figs as R  # noqa: E402
 
-LABEL = {"uniform": "uniform", "fas": "FAS a3", "fas_a1": "FAS a1", "sgs": "SGS", "lp": "LP"}
+LABEL = {"uniform": "uniform", "fas": "FAS a3", "fas_a1": "FAS a1", "sgs": "SGS", "lp": "LP", "plr": "PLR"}
 RUNS = {
     "walker2d": dict(R.TASKS["walker2d"]["runs"], fas_a1="fas_a1.0_b0.5_ta4"),
     "hopper": dict(R.TASKS["hopper"]["runs"], fas_a1="fas_gv2_a1.0_b0.5_ta4"),

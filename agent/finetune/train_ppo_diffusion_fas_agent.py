@@ -112,6 +112,10 @@ class TrainPPODiffusionFASAgent(TrainPPODiffusionAgent):
         self.venv.call_sync("set_condition_probs", probs=self._probs)
 
     def on_env_step(self, step, info_venv, done_venv, eval_mode, obs=None, action=None):
+        if self.sampler.score == "value" and not eval_mode:
+            if step == 0:
+                self._step_cond = np.zeros((self.n_steps, self.n_envs), dtype=np.int64)
+            self._step_cond[step] = [int(np.asarray(i["fas_cond"]).reshape(-1)[-1]) for i in info_venv]
         if self.save_success_trajs and not eval_mode and obs is not None:
             self._record_traj_step(info_venv, done_venv, obs, action)
         for info in info_venv:
@@ -167,6 +171,10 @@ class TrainPPODiffusionFASAgent(TrainPPODiffusionAgent):
         )
         log.info(f"RFT: saved {len(meta)} successful episodes ({sum(len(o) for o in obs)} chunks)")
 
+    def on_advantages(self, advantages_trajs):
+        if self.sampler.score == "value":
+            self.sampler.update_value(self._step_cond.reshape(-1), np.maximum(advantages_trajs, 0).reshape(-1))
+
     def on_rollout_end(self, eval_mode):
         source = "eval" if eval_mode else "train"
         if self.save_success_trajs and not eval_mode:
@@ -221,6 +229,7 @@ class TrainPPODiffusionFASAgent(TrainPPODiffusionAgent):
                 "source": source,
                 "probs": p.copy(),
                 "scores": self.sampler.scores.copy(),
+                "values": self.sampler.values.copy(),
                 "cond": cond,
                 "success": success,
                 "return": ret,

@@ -111,11 +111,63 @@ Main metrics:
 - the same two for return
 - sample efficiency: the `fas/eval/balanced_success` curve against env steps
 
-## Step 3 (later): RQ2 and RQ3
+## Step 3: RQ2, RQ3, extra conditions
 
-- **RQ2:** sweep `fas.alpha`, `fas.beta` and `fas.ema_rate`, e.g. `bash scripts/fas/finetune.sh hopper-v2 fas 0 fas.alpha=2 fas.beta=0.8`. For "critic error", watch the `explained variance` and `value loss` curves in wandb.
-- **RQ3 (RFT):** not implemented yet. Set `train.save_trajs=True` to keep the rollouts; the successful ones become the imitation dataset.
+- **Figures and tables:** `python scripts/fas/report_figs.py --out figs` writes everything into `figs/`:
+  - `fig_curves`, `fig_final`, `fig_bins`: RQ1 on 3 tasks;
+  - `sample_efficiency.csv`: per-seed AUC with Welch t, and iterations to a fixed threshold;
+  - `fig_rq3`: RL vs RFT;
+  - `fig_hard`: the harder walker2d grid;
+  - `fig_sparse`: reward sparsity.
+- **RQ2: sampling strength and critic error.**
+  - `python scripts/fas/rq2_critic.py <run_dir> <itr>` measures per-bin critic error against the Monte-Carlo return.
+  - `python scripts/fas/rq2_analysis.py --critic-dir ~/dppo_fas/rq2` reports:
+    - sampling concentration;
+    - the α=1 vs α=3 comparison;
+    - success on the worst 25% of bins;
+    - critic error by difficulty group.
+  - Output: `figs/rq2_analysis.txt`.
+- **RQ2: reward sparsity.** `++env.wrappers.mujoco_disturbance.reward_delay=K` accumulates the dense reward and pays it every K env steps and at episode end. The episode return does not change, and `fas_ep_return` stays dense.
+- **Harder grid** (walker2d): override `env.wrappers.mujoco_disturbance.condition_space.{mass_scale=[1.0,1.25,1.5,1.75],friction_scale=[0.35,0.5,1.0],impulse_force=[150.0,300.0,450.0]}` for training. For eval, use the same overrides plus `eval_grid=hard`, which writes to a separate eval dir.
+- **RQ3 (RFT):**
+  1. Set `fas.save_success_trajs=True` during fine-tuning.
+  2. Run `cfg/gym/rft/<env>/rft_diffusion_mlp.yaml`. It is diffusion BC from the EMA weights on the successful train episodes, with actions clipped to the executed ±1. `demo_weight` mixes in D4RL demos.
 - **LEGO:** a new env and wrapper that implement the same `set_condition_probs` / `set_condition_schedule` / `fas_ep_*` interface. The agent itself is env-agnostic apart from the wrapper-name assert.
+
+### Findings so far (walker2d unless noted; 3 seeds; t = Welch t vs uniform)
+
+- **RQ1, train grid.** FAS α=3 beats uniform on walker2d: 0.874 vs 0.836 (5 seeds), and 0.576 vs 0.498 on the worst 25% of bins.
+  - hopper and halfcheetah: about equal.
+  - AUC: walker2d +0.026 (t=2.75); hopper slightly worse; halfcheetah no difference.
+  - Most bins are already solved by uniform, and halfcheetah's hard bins are not limited by data.
+- **Harder grid.** The gain does not grow:
+  - final success: FAS 0.635 vs 0.618 (t=1.8);
+  - worst 25%: 0.252 vs 0.207;
+  - AUC: equal;
+  - SGS: 0.623.
+  - Here FAS samples about as evenly as 21 of 36 bins (12 on the original grid), because most bins look equally failed.
+- **RQ2, α.** α=1/β=0.5 samples nearly uniformly (about 30 bins) and matches uniform. Only the concentrated α=3 sampler helps.
+- **RQ2, critic.**
+  - Relative critic error is about 0.32–0.36 for every method; it is dominated by time ambiguity (see quirks).
+  - FAS does not raise the error. Bins it samples more have slightly lower error (corr −0.1 to −0.36).
+- **RQ2, reward sparsity** (seeds 0–2). FAS − uniform:
+
+  | K | final success | worst 25% | AUC |
+  |---|---|---|---|
+  | 1 | +0.030 | +0.059 | +0.019 |
+  | 25 | +0.054 (t=4.5) | +0.115 (t=7.8) | +0.039 (t=4.2) |
+  | 100 | +0.034 (t=2.5) | +0.093 (t=3.7) | +0.023 (t=2.1) |
+
+  Uniform degrades with sparsity and FAS's advantage holds or grows.
+- **RQ3** (train/OOD balanced success, by source of successes):
+
+  | Source | RL | RFT | RFT + demos |
+  |---|---|---|---|
+  | FAS | 0.882/0.450 | 0.820/0.400 | 0.654/0.367 |
+  | uniform | 0.831/0.400 | 0.752/0.383 | 0.635/0.350 |
+  | frozen EMA | 0.464/0.288 | 0.454/0.275 | — |
+
+  The successes that RL discovers explain most of the gain; the policy-gradient step adds 6–8 points. Mixing in D4RL demos hurts.
 
 ## Things to calibrate before the real runs
 
@@ -125,7 +177,7 @@ Main metrics:
 
 ## Known upstream quirks (left unchanged)
 
-- `MultiStep` reports `terminated=True` on time-limit truncation as well. The disturbance wrapper therefore tracks falls itself (`fas_ep_terminated`).
+- `MultiStep` reports `terminated=True` on time-limit truncation as well. The disturbance wrapper therefore tracks falls itself (`fas_ep_terminated`). As a side effect, PPO's GAE (`nonterminal = 1 - terminated`) treats the 1000-step limit as a real terminal state. The critic is trained toward return-to-episode-end, but it has no time feature. That leaves an irreducible error in bins where the policy survives to the limit, which is why `rq2_critic.py` uses the same target. This is the same for every method, so we leave it as is.
 - The upstream gym eval configs for walker2d and halfcheetah have a wrong or empty `base_policy_path`. Our `eval_diffusion_mlp_disturbance` configs set the correct one.
 - **The pretrained baseline must be the EMA weights.** DPPO fine-tuning starts from the pretrained checkpoint's `ema` weights (`DiffusionModel` loads `ema` when it is present). The eval model (`model/diffusion/diffusion_eval.py`) reads `model` instead, which holds the raw weights. So `evaluate.sh <task> pretrained` scores a different policy than the one DPPO starts from. On our disturbance grids the two differ a lot (train-grid balanced success, raw → EMA): walker2d 0.808 → 0.464, halfcheetah 0.758 → 0.511, hopper v2 0.381 → 0.394. Report the EMA numbers as "pretrained (DPPO init)". To get them, run `python scripts/fas/export_pretrained_ema.py` and evaluate `$DPPO_LOG_DIR/gym-pretrain-ema/<env>_pre_diffusion_mlp_ema/ckpt_0/checkpoint/state_3000.pt`. RFT starts from the same EMA weights.
 - **gpu3:** in Nov 2026 every CPU core on socket 0 (0–63, 128–191) ran at 400 MHz, while socket 1 ran at ~3 GHz. Runs whose main process lands on socket 0 are about 5× slower; this explains the "bimodal iteration time". Launch with `taskset -c 64-127,192-255`.

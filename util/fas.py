@@ -16,6 +16,9 @@ with the per-bin weight w_c chosen by `score` (all share the EMA estimates and t
              at target success t. softmax(log(K+eps)/T) == (K+eps)^(1/T) normalized; beta=1 is SGS.
   progress : (LP_c / max LP + delta)^alpha,  LP_c = |s_c - s_c^slow|  -- absolute learning
              progress (TSCL / ALP-GMM), fast EMA (ema_rate) minus slow EMA (ema_slow).
+  value    : (v_c / max v + delta)^alpha,  v_c = EMA of the positive value loss mean_t max(A_t, 0) of the
+             bin's train steps (PLR score, Jiang et al. ICML 2021), updated by update_value(); same power
+             form and beta-mix as FAS so only the signal (value error vs failure) differs.
 
 beta = 0 recovers uniform domain randomization (the DPPO baseline).
 """
@@ -76,7 +79,7 @@ class ConditionSpace:
         return out
 
 
-SCORES = ("failure", "frontier", "progress")
+SCORES = ("failure", "frontier", "progress", "value")
 _FLOAT_PARAMS = ("alpha", "beta", "delta", "ema_rate", "target", "kappa", "temperature", "eps", "ema_slow")
 
 
@@ -118,6 +121,8 @@ class FailureAwareSampler:
         self.ema_slow = float(ema_slow)
         self.scores = np.full(n_bins, float(init_score))
         self.scores_slow = self.scores.copy()  # slow EMA, only used by score="progress"
+        self.values = np.zeros(n_bins)  # EMA positive value loss, only used by score="value"
+        self.n_value_obs = np.zeros(n_bins, dtype=np.int64)
         self.n_observed = np.zeros(n_bins, dtype=np.int64)  # cumulative episodes per bin
 
     # ------------------------------------------------------------------ update
@@ -146,6 +151,26 @@ class FailureAwareSampler:
         self.n_observed += counts
         return batch_fail
 
+    def update_value(self, cond_ids: Sequence[int], pos_adv: Sequence[float]) -> np.ndarray:
+        """PLR score: per-bin mean of max(A_t, 0) over a batch of train steps, EMA-smoothed (ema_rate).
+        Bins never observed keep the current max (optimistic), so they are still sampled."""
+        cond_ids = np.asarray(cond_ids, dtype=np.int64).reshape(-1)
+        pos_adv = np.asarray(pos_adv, dtype=float).reshape(-1)
+        counts = np.bincount(cond_ids, minlength=self.n_bins)
+        sums = np.bincount(cond_ids, weights=pos_adv, minlength=self.n_bins)
+        seen = counts > 0
+        batch = np.full(self.n_bins, np.nan)
+        batch[seen] = sums[seen] / counts[seen]
+        first = seen & (self.n_value_obs == 0)
+        later = seen & (self.n_value_obs > 0)
+        self.values[first] = batch[first]
+        self.values[later] = (1 - self.ema_rate) * self.values[later] + self.ema_rate * batch[later]
+        self.n_value_obs += counts
+        unseen = self.n_value_obs == 0
+        if unseen.any() and (~unseen).any():
+            self.values[unseen] = self.values[~unseen].max()
+        return batch
+
     # ------------------------------------------------------------------ probs
     def weights(self) -> np.ndarray:
         """Unnormalized priority w_c of each bin under the chosen score."""
@@ -156,6 +181,9 @@ class FailureAwareSampler:
             k = np.power(q + self.eps, self.kappa * self.target) * np.power(
                 1.0 - q + self.eps, self.kappa * (1.0 - self.target))
             return np.power(k + self.eps, 1.0 / self.temperature)
+        if self.score == "value":
+            v = self.values / self.values.max() if self.values.max() > 0 else np.zeros_like(self.values)
+            return np.power(v + self.delta, self.alpha)
         lp = np.abs(self.scores - self.scores_slow)  # "progress"
         lp = lp / lp.max() if lp.max() > 0 else np.zeros_like(lp)
         return np.power(lp + self.delta, self.alpha)
@@ -169,7 +197,7 @@ class FailureAwareSampler:
     def state_dict(self):
         d = {k: getattr(self, k) for k in _FLOAT_PARAMS}
         d.update(score=self.score, scores=self.scores.copy(), scores_slow=self.scores_slow.copy(),
-                 n_observed=self.n_observed.copy())
+                 values=self.values.copy(), n_value_obs=self.n_value_obs.copy(), n_observed=self.n_observed.copy())
         return d
 
     def load_state_dict(self, d):
@@ -177,6 +205,8 @@ class FailureAwareSampler:
         self.scores_slow = np.asarray(d.get("scores_slow", d["scores"]), dtype=float).copy()
         self.n_observed = np.asarray(d["n_observed"], dtype=np.int64).copy()
         self.score = d.get("score", "failure")
+        self.values = np.asarray(d.get("values", np.zeros(self.n_bins)), dtype=float).copy()
+        self.n_value_obs = np.asarray(d.get("n_value_obs", np.zeros(self.n_bins)), dtype=np.int64).copy()
         for k in _FLOAT_PARAMS:
             if k in d:  # checkpoints from before the score option lack the new keys
                 setattr(self, k, float(d[k]))
