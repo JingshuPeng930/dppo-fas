@@ -36,7 +36,7 @@ This is the skeleton of the report's Experiments / Results section for the three
   | hopper | 0.394 | 0.250 |
   | halfcheetah | 0.511 | 0.263 |
 
-  - Note in a footnote that upstream eval loads the raw weights, not EMA (FAS_README, "Known upstream quirks").
+  - Note in a footnote that upstream eval loads the raw weights, not EMA (README, "Known upstream quirks").
 
 ## 2. RQ1: robustness and sample efficiency
 
@@ -154,19 +154,19 @@ This is the skeleton of the report's Experiments / Results section for the three
 - **Not a claim:** do not say "FAS is better under sparse reward" in general, or "sparser is always better" (walker2d is not monotonic).
 
 **3d. Hypothesis test: hopper with only learnable hard conditions (`fig_hopper_v3`, 5 seeds).**
-- **Why this test.** On the standard hopper grid, the 300 N push is essentially unlearnable: uniform DR leaves those bins at about 0.2 success, the same as the pretrained policy. FAS keeps sampling them.
+- **Why this test.** On the main hopper grid, the 300 N push is essentially unlearnable: uniform DR leaves those bins at about 0.2 success, the same as the pretrained policy. FAS keeps sampling them.
 - **Grid.** We kept friction {0.5, 1.0, 1.15} and replaced the pushes with {0, 100, 200} N. This grid was chosen *before* training, by evaluating existing policies on candidate grids:
   - the pretrained policy scores 0.43;
-  - the uniform policy trained on the standard grid leaves only 2 of 36 bins on the new grid unsolved.
+  - the uniform policy trained on the main grid leaves only 2 of 36 bins on the new grid unsolved.
 - **Prediction, written down before the runs:** FAS > uniform.
 
-| Method | Final success | Worst 25% | AUC | OOD (standard hopper OOD grid) |
+| Method | Final success | Worst 25% | AUC | OOD (hopper OOD grid) |
 |---|---|---|---|---|
 | Uniform DR | 0.684 | 0.282 | 0.584 | 0.307 |
 | FAS | **0.723** (+0.039, t = 3.5, CI [0.018, 0.058]) | **0.358** (+0.076, t = 2.7, CI [0.029, 0.124]) | 0.601 (+0.017, t = 2.6, CI [0.006, 0.029]) | 0.303 |
 | FAS + LP gate | 0.715 (+0.031, t = 1.9, CI [0.001, 0.058]) | 0.316 (t = 1.0) | **0.610** (+0.026, t = 3.4) | 0.305 |
 
-- **Result.** The prediction holds. On the same robot where FAS gave nothing on the standard grid, it now improves final success, worst-case bins and speed. With 5 seeds the final and worst-25% gaps became *more* significant (t 2.1 → 3.5 and 1.7 → 2.7), and all three CIs exclude 0. FAS's AUC is higher than uniform's for every seed index.
+- **Result.** The prediction holds. On the same robot where FAS gave nothing on the main grid, it now improves final success, worst-case bins and speed. With 5 seeds the final and worst-25% gaps became *more* significant (t 2.1 → 3.5 and 1.7 → 2.7), and all three CIs exclude 0. FAS's AUC is higher than uniform's for every seed index.
 - **Where the gain comes from.** It is all in the 21 frontier bins (0.49 → 0.56). The 15 solved bins are unchanged (0.96).
 - **OOD is unchanged.** The hopper OOD grid contains 375 N pushes, far beyond the 200 N maximum seen in training on this grid.
 - **Takeaway for RQ2:** the exploration / stability trade-off of failure-focused sampling is governed by *learnability* of the failed conditions, not by critic stability.
@@ -180,7 +180,7 @@ This is the skeleton of the report's Experiments / Results section for the three
   - AUC: 0.793 vs 0.754.
   - All four bootstrap CIs exclude 0.
 - **halfcheetah (3 seeds):** small gains: 0.794 vs 0.777, AUC t = 2.6.
-- **hopper standard grid:** no help (0.549). The gate does not identify the unlearnable bins: their failure rate fluctuates as much as frontier bins' (|Δ failure| 0.053 vs 0.088).
+- **hopper main grid:** no help (0.549). The gate does not identify the unlearnable bins: their failure rate fluctuates as much as frontier bins' (|Δ failure| 0.053 vs 0.088).
 - **How to present it:** a promising variant, not the main method. It was designed after seeing the main results, so it should be labeled post hoc.
 
 ## 4. RQ3: RL vs RFT on discovered successes (`fig_rq3`, walker2d and hopper)

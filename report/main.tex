@@ -122,7 +122,10 @@ As a post-hoc variant, we multiply the weight by a learning-progress term, $w_t(
 
 \textbf{MuJoCo tasks.} We use hopper, walker2d and halfcheetah~\citep{todorov2012mujoco}, starting from DPPO's diffusion policies pretrained on D4RL-medium data~\citep{fu2020d4rl}: action chunks of 4, 20 denoising steps, of which the last 10 are fine-tuned.
 Each PPO iteration collects $40 \times 2000$ environment steps. Every method gets 200 iterations (16M steps).
-\textbf{Conditions:} $|\C| = 36$ bins = torso mass $\{0.75, 1, 1.25, 1.5\}\times$ friction $\{0.5, 1, 1.5\}\times$ horizontal push $\{0, 150, 300\}$\,N. A push starts with probability $0.01$ per step and lasts 5 steps. For hopper, friction is $\{0.5, 1, 1.15\}$, because no policy succeeds at friction $\geq 1.25$.
+\textbf{Conditions (main grid):} $|\C| = 36$ bins = torso mass $\{0.75, 1, 1.25, 1.5\}\times$ friction $\{0.5, 1, 1.5\}\times$ horizontal push $\{0, 150, 300\}$\,N. A push starts with probability $0.01$ per step and lasts 5 steps.
+This grid is our own design, not taken from prior work. We fixed it before any fine-tuning run and use it for all three tasks so that results are comparable. We calibrated it on the pretrained policy, so that bins range from easy to hard and \fas{} has something to prioritize; the strongest push (300\,N) makes the pretrained policy fall often.
+For hopper, friction is $\{0.5, 1, 1.15\}$, because in a first version of the grid no policy, pretrained or fine-tuned, succeeded at friction $\geq 1.25$.
+Calibrating on the pretrained policy only shows that a bin is hard for it, not whether RL can learn the bin within the budget; \S\ref{sec:rq2} shows that this distinction matters.
 The OOD grid has 8 held-out extreme bins: mass $\{0.6, 1.75\}$, friction $\{0.35, 2.0\}$ (hopper: 1.2) and push $\{0, 450\}$\,N (hopper: 375\,N).
 \textbf{Success:} the robot does not fall within the first 500 steps (walker2d) or 300 steps (hopper), or it reaches a return of at least 4000 (halfcheetah). These thresholds are calibrated so that the pretrained policy has intermediate success in most bins.
 Each checkpoint is evaluated deterministically for 10 episodes per bin.
@@ -142,7 +145,7 @@ Unless stated otherwise we use 3 seeds, and 5--6 seeds for the main uniform vs.\
 
 \begin{table}[t]
 \centering
-\caption{Final balanced success on the training grid / held-out OOD grid (mean over seeds). Best adaptive method in bold. Seeds: uniform and \fas{} 5 (hopper 6), \fas{}+LP 5 on walker2d, all others 3.}
+\caption{Final balanced success on the main training grid / held-out OOD grid (mean over seeds). Best adaptive method in bold. Seeds: uniform and \fas{} 5 (hopper 6), \fas{}+LP 5 on walker2d, all others 3.}
 \label{tab:main}
 \small
 \begin{tabular}{lcccccc}
@@ -195,8 +198,9 @@ On walker2d, the advantage of \fas{} grows with sparsity: at $K=25$ it is $+5.4$
 On hopper the sign flips. \fas{} falls behind uniform DR as $K$ grows, by $-2.1$ points at $K=100$ (5 seeds), and its AUC is lower with a 95\% CI that excludes zero ($t=-3.3$).
 Since the critic is unaffected, the difference must come from \emph{where} the samples go.
 
-\textbf{Learnability: a pre-registered test.} On the standard hopper grid, uniform DR leaves the 300\,N push bins at about the pretrained success rate: those bins are effectively unlearnable within the budget, yet \fas{} places 46\% of its samples on bins it is currently failing.
-Before training, we predicted that \fas{} would beat uniform DR once these bins were removed. We replaced the pushes with $\{0, 100, 200\}$\,N, a grid on which the uniform policy from the standard grid leaves only 2 of 36 bins unsolved.
+\textbf{Learnability: a pre-registered test.} On hopper's main grid, the 300\,N pushes turned out to be far harder than on the other two robots: after fine-tuning, uniform DR is still at about the pretrained success rate on these bins. They are effectively unlearnable within our budget, yet \fas{} places 46\% of its samples on bins it is currently failing.
+This observation motivated a follow-up experiment on a second hopper grid, the \emph{learnable grid}: the same mass and friction values, with pushes of $\{0, 100, 200\}$\,N instead of $\{0, 150, 300\}$\,N.
+We chose it by evaluating existing policies (the uniform-DR policy trained on the main grid leaves only 2 of its 36 bins unsolved), and wrote down the prediction that \fas{} beats uniform DR before training on it.
 The prediction holds (Fig.~\ref{fig:v3}): over 5 seeds, \fas{} reaches 0.723 vs.\ 0.684 train success ($t=3.5$), 0.358 vs.\ 0.282 on the worst-25\% bins ($t=2.7$), and a higher AUC than uniform DR on every seed ($t=2.6$); all three bootstrap 95\% CIs exclude zero. OOD success is unchanged (0.303 vs.\ 0.307).
 All of the gain is on frontier bins (0.49$\to$0.56); solved bins stay at 0.96.
 \emph{Answer to RQ2: the trade-off is governed by whether the conditions \fas{} focuses on are learnable, not by critic stability.}
@@ -204,7 +208,7 @@ All of the gain is on frontier bins (0.49$\to$0.56); solved bins stay at 0.96.
 \begin{figure}[t]
 \centering
 \includegraphics[width=\linewidth]{fig_hopper_v3.pdf}
-\caption{Hopper with only learnable disturbances (push $\le$ 200\,N). Left: per-seed final success, worst-25\% bins, AUC and OOD success. Right: per-bin success, grouped by the uniform policy's difficulty. 5 seeds.}
+\caption{Hopper, learnable grid (pushes $\{0, 100, 200\}$\,N; mass and friction as in the main grid). Left: per-seed final success, worst-25\% bins, AUC and OOD success. Right: per-bin success, grouped by the uniform policy's difficulty. 5 seeds.}
 \label{fig:v3}
 \end{figure}
 
@@ -258,7 +262,7 @@ Successes of the frozen pretrained policy give nothing, and mixing in nominal-on
 
 \subsection{Negative results}
 \label{sec:negative}
-(i) \fas{} gives no gain on hopper's standard grid or on halfcheetah, whose hard bins are not data-limited: every method reaches about 0.42 on them, although \fas{} spends 65\% of its samples there.
+(i) \fas{} gives no gain on hopper's main grid or on halfcheetah, whose hard bins are not data-limited: every method reaches about 0.42 on them, although \fas{} spends 65\% of its samples there.
 (ii) A harder walker2d grid (mass up to 1.75, friction down to 0.35, pushes up to 450\,N) does not widen the gap (0.635 vs.\ 0.618, $t=1.8$): when most bins are failing, the failure weights become nearly flat and \fas{} spreads its samples over about 21 bins.
 (iii) The LP gate does not detect hopper's unlearnable bins, whose failure rate fluctuates almost as much as that of frontier bins.
 (iv) PLR (\S\ref{sec:baselines}).

@@ -1,7 +1,7 @@
 # DPPO-FAS 后续工作计划（2026-11-13）
 
 依据：proposal 原文（RQ1–RQ3、baseline、LEGO 任务）、助教的反馈、截至 11-13 的实验结果。
-用法：每做完一项就在这里更新状态，结果数字写进 FAS_README.md。
+用法：每做完一项就在这里更新状态，结果数字写进 README.md。
 
 ---
 
@@ -33,7 +33,7 @@
 | 第一阶段：SGS 和 learning progress 采样，walker2d 和 hopper v2 各 3 个 seed | **11-13 23:30 开始跑**（tmux `fas_{walker2d,hopper}_{sgs,lp}_s{0,1,2}`），代码见 commit 3367bef |
 
 | halfcheetah RQ1（3 个 seed） | 完成：FAS α=3 0.777 对 uniform 0.769 对 DPPO 0.649（训练网格），打平 |
-| **基线修正（11-14）** | 预训练行改用 EMA 权重（DPPO 实际的初始化），详见 FAS_README 的 quirks 一节 |
+| **基线修正（11-14）** | 预训练行改用 EMA 权重（DPPO 实际的初始化），详见 README 的 quirks 一节 |
 | 第三阶段 RQ3：保存轨迹，重跑 walker2d 的 uniform / FAS α=3 / 冻结预训练策略各 3 个 seed | **11-14 00:15 开始跑**（tmux `fas_walker2d_rq3{uniform,fas,frozen}_s{0,1,2}`），完成后运行 `scripts/fas/rft.sh` |
 
 截止时间：大约两周后（11-27 前后），所以 PLR value_error 打分和稀疏奖励包装器都放在可选项里。
@@ -113,7 +113,7 @@ proposal 原文：从原始 checkpoint 出发，只用 DPPO 发现的成功轨�
 - 指标：平衡成功率、最差 bin 成功率、回报、学习曲线下面积（样本效率）；显著性用 Welch t 检验，报告 seed 数。
 - 工具：`scripts/fas/finetune.sh`、`evaluate.sh`、`summarize_evals.py`、`learning_curves.py`、`diag_fas.py`。
 - gpu3 同时最多跑约 12 个任务；tmux 会话名不能带 "."。
-- 每个阶段结束后把结果追加到 FAS_README.md，commit 并 push。
+- 每个阶段结束后把结果追加到 README.md，commit 并 push。
 
 ## 7. 顺序与时间估计
 

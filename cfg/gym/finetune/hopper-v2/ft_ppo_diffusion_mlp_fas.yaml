@@ -44,7 +44,7 @@ fas:
   eval_schedule_len: 16        # round-robin conditions per env during eval iterations
   success:
     criterion: survive_steps    # failure = fell within the first min_steps env steps
-    min_steps: 300              # calibrated on pretrained hopper (see FAS_README); criterion=survive -> strict 1000-step version
+    min_steps: 300              # calibrated on pretrained hopper (see README); criterion=survive -> strict 1000-step version
 
 wandb:
   project: dppo-fas-${env_name}

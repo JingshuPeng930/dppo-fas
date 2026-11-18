@@ -53,7 +53,7 @@ TASKS = collections.OrderedDict([
     ("hopper", dict(env="hopper-medium-v2", grid="_gv2", runs={
         "uniform": "uniform_gv2_ta4|rq3uniform_gv2_ta4", "fas": "fas_gv2_a3.0_b0.9_ta4|rq3fas_gv2_a3.0_b0.9_ta4", "sgs": "sgs_gv2", "lp": "lp_gv2", "plr": "plr_gv2_a3.0_b0.9_ta4", "fasp": "fasp1_gv2"})),
     ("halfcheetah", dict(env="halfcheetah-medium-v2", grid="", runs={
-        "uniform": "uniform_ta4", "fas": "fas_a3.0_b0.9_ta4", "sgs": "sgs_a1.0", "lp": "lp_a1.0", "fasp": "fasp1_a3.0"})),
+        "uniform": "uniform_ta4|rq3uniform_ta4", "fas": "fas_a3.0_b0.9_ta4|rq3fas_a3.0_b0.9_ta4", "sgs": "sgs_a1.0", "lp": "lp_a1.0", "plr": "plr_a3.0_b0.9_ta4", "fasp": "fasp1_a3.0"})),
 ])
 
 
@@ -278,7 +278,7 @@ def fig_final(out, methods=None, name="fig_final"):
 
 # ----------------------------------------------------------------- RQ3
 def fig_rq3(out):
-    """rows: walker2d (seeds 0-2, + frozen source and demo-mix variant), hopper (source runs seeds 3-5)"""
+    """rows: walker2d (seeds 0-2, + frozen source), hopper (source runs seeds 3-5), halfcheetah (source runs seeds 5-7)"""
     variants = [("RL policy", "#2a78d6"), ("RFT", "#eb6834"), ("RFT + demos (0.6)", "#f2b38f")]
     setups = [
         ("walker2d", "walker2d-medium-v2", "", "_clip_ta4", [
@@ -286,8 +286,10 @@ def fig_rq3(out):
             ("frozen", "Pretrained rollouts\n(frozen)", None)]),
         ("hopper", "hopper-medium-v2", "_gv2", "_ta4", [
             ("fas", "FAS rollouts", "rq3fas_gv2_a3.0"), ("uniform", "Uniform rollouts", "rq3uniform_gv2_ta4")]),
+        ("halfcheetah", "halfcheetah-medium-v2", "", "_ta4", [
+            ("fas", "FAS rollouts", "rq3fas_a3.0"), ("uniform", "Uniform rollouts", "rq3uniform_ta4")]),
     ]
-    fig, axes = plt.subplots(2, 2, figsize=(9, 6.0))
+    fig, axes = plt.subplots(3, 2, figsize=(9, 8.6))
     for row, (task, env, grid, rft_suffix, sources) in enumerate(setups):
         for ax, split in zip(axes[row], ["train", "ood"]):
             ev = load_evals(env, split + grid)
