@@ -3,7 +3,7 @@
 This is the skeleton of the report's Experiments / Results section for the three MuJoCo tasks.
 - Every number below comes from `figs/` (regenerate with `python scripts/fas/report_figs.py --out figs`) or from `figs/rq2_analysis.txt`.
 - "t" is Welch's t against uniform DR; with 3–5 seeds, |t| > ~2.5 is a reasonably clear difference.
-- Success is *balanced success*: the mean over the 36 condition bins of per-bin success, from 20 evaluation episodes per bin with the deterministic policy.
+- Success is *balanced success*: the mean over the 36 condition bins of per-bin success, from 10 evaluation episodes per bin with the deterministic policy.
 - TODO marks things that are still running or are not part of this MuJoCo study.
 
 ## 1. Setup (one paragraph plus one table)
@@ -12,9 +12,9 @@ This is the skeleton of the report's Experiments / Results section for the three
 - **Condition space.** 36 bins = torso mass × friction × push force.
   - walker2d / halfcheetah: mass {0.75, 1, 1.25, 1.5}, friction {0.5, 1, 1.5}, push {0, 150, 300} N.
   - hopper uses grid v2.
-  - OOD grid: 8 bins at the extremes, e.g. mass {0.6, 1.75}, friction {0.35, 2.0}, push {0, 450}.
+  - OOD grid: 8 held-out bins, mass {0.6, 1.75} × friction {0.35, 2.0} × push {0, 450} N (hopper: friction {0.35, 1.2}, push {0, 375} N).
 - **Success.**
-  - hopper / walker2d: the agent does not fall within the first 500 steps.
+  - walker2d: the agent does not fall within the first 500 steps; hopper: within the first 300 steps (calibrated on the pretrained policies).
   - halfcheetah: return ≥ 4000.
 - **Budget.** 200 PPO iterations × 80k env steps = 16M steps, identical for all methods.
 - **Methods.** All except DPPO use the same sampler form, p(c) = β·w_c/Σw + (1−β)/|C|:
@@ -40,7 +40,7 @@ This is the skeleton of the report's Experiments / Results section for the three
 
 ## 2. RQ1: robustness and sample efficiency
 
-**Figures:** `fig_curves` (learning curves), `fig_final` (final success, train and OOD), `fig_bins` (by difficulty).
+**Figures:** `fig_curves` (learning curves), `fig_final` (final success, train and OOD; main methods only, `fig_final_all` with every baseline for the appendix), `fig_bins` (by difficulty).
 
 **Table 1: final balanced success** (state_199, mean over seeds)
 
@@ -48,20 +48,27 @@ This is the skeleton of the report's Experiments / Results section for the three
 |---|---|---|---|---|---|---|
 | Pretrained (EMA) | 0.464 | 0.288 | 0.394 | 0.250 | 0.511 | 0.263 |
 | DPPO (nominal) | 0.700 | 0.325 | 0.451 | 0.275 | 0.645 | 0.317 |
-| Uniform DR | 0.836 | 0.395 | 0.554 | 0.275 | 0.769 | 0.458 |
-| FAS | **0.874** | **0.435** | 0.565 | 0.263 | **0.777** | **0.483** |
+| Uniform DR | 0.836 | 0.395 | 0.561 | 0.279 | 0.777 | 0.475 |
+| FAS | 0.874 | 0.435 | 0.557 | 0.279 | 0.786 | 0.488 |
 | SGS | 0.871 | 0.429 | 0.498 | 0.271 | 0.771 | 0.475 |
-| LP | 0.849 | 0.404 | **0.576** | **0.283** | 0.769 | 0.471 |
+| LP | 0.849 | 0.404 | **0.576** | 0.283 | 0.769 | 0.471 |
 | PLR | 0.808 | 0.388 | 0.500 | 0.267 | – | – |
+| FAS + LP gate (§3e) | **0.896** | **0.457** | 0.549 | **0.296** | **0.794** | **0.492** |
 
-(walker2d uniform / FAS: 5 seeds; everything else: 3 seeds)
+(Seeds: uniform and FAS 5 on walker2d and halfcheetah, 6 on hopper; FAS + LP gate 5 on walker2d; everything else 3.)
+
+**Uncertainty.** `figs/comparisons.csv` gives, for every method vs uniform, the difference, Welch t and a 95% percentile bootstrap CI over seeds.
+- Walker2d FAS: the CIs for train, worst 25%, OOD and AUC all exclude 0.
+- Halfcheetah and hopper FAS: no CI excludes 0.
+- With 3–6 seeds a bootstrap CI is too narrow. Say this in a footnote and treat |t| as the main guide.
 
 **Claims, in order of strength:**
 
 1. **Training under disturbances matters most.** Uniform DR beats nominal DPPO by 10–14 points on train and up to 14 on OOD.
 2. **FAS adds a smaller, task-dependent gain on top of uniform:**
    - walker2d: +3.9 points train (t = 3.8), +4.0 OOD (t = 1.9);
-   - hopper and halfcheetah: within noise.
+   - hopper (6 seeds) and halfcheetah (5 seeds): within noise (|t| < 1).
+   - Section 3d shows *why* hopper shows no gain, and that FAS does help on hopper once its unlearnable bins are removed.
 3. **The gain concentrates in the hard bins** (Table 2 below).
    - walker2d worst 25% of bins: 0.576 vs 0.498 for uniform.
    - `fig_bins`: the "solved" group is identical across methods; the differences are all in the frontier and unsolved groups.
@@ -70,10 +77,12 @@ This is the skeleton of the report's Experiments / Results section for the three
    | Task | AUC (FAS vs uniform) | Iterations to threshold (median, FAS vs uniform) |
    |---|---|---|
    | walker2d | 0.780 vs 0.754, t = 2.75 | 80 vs 100 |
-   | hopper | 0.449 vs 0.459, t = −3.1 | 150 vs 120 (FAS slower early) |
-   | halfcheetah | 0.689 vs 0.679, t = 1.3 | 100 vs 80 |
+   | hopper | 0.453 vs 0.456, t = −0.8 | 135 vs 115 (FAS slower early) |
+   | halfcheetah | 0.687 vs 0.684, t = 0.4 | 80 vs 80 |
+   | hopper, learnable grid (§3d, 5 seeds) | 0.601 vs 0.584, t = 2.6 | – |
 
    - SGS is fastest on walker2d (median 50) but slowest on hopper.
+   - FAS + LP gate on walker2d: AUC 0.793 (t = 7.6), median 70 iterations.
    - Write this honestly: there is no consistent speed-up across tasks.
 
 **Why the gain is modest (discussion):**
@@ -91,7 +100,12 @@ This is the skeleton of the report's Experiments / Results section for the three
 - **Conclusion:** a harder space does not widen the gap. Most bins look equally failed, so FAS's distribution flattens: it samples as evenly as about 21 of 36 bins, vs 12 on the original grid.
 - **Side result:** policies trained on the hard grid transfer well back to the original grid (about 0.86).
 
-## 3. RQ2: exploration vs stability (`figs/rq2_analysis.txt`, `fig_sparse`)
+## 3. RQ2: exploration vs stability (`figs/rq2_analysis.txt`, `fig_sparse`, `fig_hopper_v3`)
+
+**The argument, in three steps:**
+1. Focusing on failures does **not** destabilize the critic (3b).
+2. Critic / value error is therefore a poor signal for *where* to sample; PLR, which uses it, does worse than uniform (§5).
+3. The real risk is spending samples on conditions that **cannot be learned**. This explains the hopper results (3a, 3c). We tested it directly: we removed hopper's unlearnable condition, and FAS then beats uniform (3d).
 
 **3a. Sampling strength α (walker2d)**
 
@@ -111,25 +125,65 @@ This is the skeleton of the report's Experiments / Results section for the three
   - walker2d at iteration 199: FAS 0.319 vs uniform 0.332 overall, and 0.311 vs 0.337 on frontier bins;
   - bins sampled more have slightly lower error (corr −0.1 to −0.36).
 - **Caveat for the report.** Upstream DPPO treats the 1000-step time limit as a terminal state, and the critic has no time input.
+- **Under sparse reward** (`figs/rq2_sparse_critic.txt`; K = 25, 100; walker2d and hopper; 3 seeds): FAS's critic error is never above uniform's, at either checkpoint.
 
-**3c. Reward sparsity (walker2d and hopper, seeds 0–2, `fig_sparse`).** The dense reward is paid out every K env steps; the episode return is unchanged.
+  | Iteration 199 | K = 1 | K = 25 | K = 100 |
+  |---|---|---|---|
+  | walker2d, uniform → FAS | 0.332 → 0.319 | 0.312 → 0.307 | 0.279 → 0.276 |
+  | hopper, uniform → FAS | 0.360 → 0.350 | 0.344 → 0.337 | 0.299 → 0.293 |
+
+  - This includes hopper at K = 100, where FAS's *success* is worse than uniform's (3c). The error on the bins FAS keeps failing (unsolved group) is also equal: 0.312 vs 0.312.
+  - **So the hopper degradation is not a critic-stability effect.** It comes from where the samples go (unlearnable bins), which 3d confirms.
+  - Do not compare error across K: delayed rewards change the shape of the Monte-Carlo target, so the absolute level is not comparable.
+
+**3c. Reward sparsity (walker2d and hopper, all available seeds, `fig_sparse`).** Seeds for K = 1 / 25 / 100: walker2d 5 / 3 / 3, hopper 6 / 3 / 5. The dense reward is paid out every K env steps; the episode return is unchanged.
 
 | Task | K | Uniform final | FAS final | Δ final | Δ worst 25% | Δ AUC |
 |---|---|---|---|---|---|---|
-| walker2d | 1 | 0.836 | 0.866 | +0.030 | +0.059 | +0.019 |
-| walker2d | 25 | 0.831 | 0.884 | +0.054 (t = 4.5) | +0.115 (t = 7.8) | +0.039 (t = 4.2) |
+| walker2d | 1 | 0.836 | 0.874 | +0.038 (t = 3.8) | +0.078 (t = 2.3) | +0.026 (t = 2.8) |
+| walker2d | 25 | 0.831 | 0.884 | +0.053 (t = 4.5) | +0.115 (t = 7.8) | +0.039 (t = 4.2) |
 | walker2d | 100 | 0.828 | 0.862 | +0.034 (t = 2.5) | +0.093 (t = 3.7) | +0.023 (t = 2.1) |
-| hopper | 1 | 0.554 | 0.565 | +0.011 | +0.022 | −0.010 (t = −3.1) |
-| hopper | 25 | 0.563 | 0.541 | −0.022 (t = −1.2) | −0.030 | −0.014 |
-| hopper | 100 | 0.544 | 0.510 | −0.034 (t = −1.5) | −0.045 | −0.028 (t = −2.2) |
+| hopper | 1 | 0.561 | 0.557 | −0.004 (t = −0.3) | +0.037 (t = 1.8) | −0.003 (t = −0.8) |
+| hopper | 25 | 0.563 | 0.541 | −0.022 (t = −1.2) | −0.030 (t = −1.4) | −0.014 (t = −1.3) |
+| hopper | 100 | 0.538 | 0.517 | −0.021 (t = −1.4) | −0.011 (t = −0.4) | −0.027 (t = −3.3, CI [−0.040, −0.012]) |
 
 - **Claim: sparsity amplifies whatever FAS's concentration does on that task.**
   - walker2d: the hard bins are learnable, and FAS's advantage holds or grows.
-  - hopper: FAS spends 46% of its samples on bins it keeps failing (300 N pushes, see 3a), and it falls behind uniform as K grows. Only the AUC at K = 100 is clearly significant; the other hopper gaps are trends (|t| ≈ 1.2–1.5).
+  - hopper: FAS spends 46% of its samples on bins it keeps failing (300 N pushes, see 3a), and it falls behind uniform as K grows. Only the AUC at K = 100 is clearly significant (5 seeds, CI excludes 0); the other hopper gaps are trends (|t| ≤ 1.4). With seeds 3–4 added, the K = 100 final-success gap shrank from −0.034 to −0.021 while the AUC gap held.
 - **Interpretation (ties RQ2 together):** concentrating on failures is a bet that the failed conditions are learnable. With a weaker reward signal, wasted samples on unlearnable conditions cost more, and samples on learnable ones are worth more.
 - **Not a claim:** do not say "FAS is better under sparse reward" in general, or "sparser is always better" (walker2d is not monotonic).
 
-## 4. RQ3: RL vs RFT on discovered successes (`fig_rq3`, walker2d)
+**3d. Hypothesis test: hopper with only learnable hard conditions (`fig_hopper_v3`, 5 seeds).**
+- **Why this test.** On the standard hopper grid, the 300 N push is essentially unlearnable: uniform DR leaves those bins at about 0.2 success, the same as the pretrained policy. FAS keeps sampling them.
+- **Grid.** We kept friction {0.5, 1.0, 1.15} and replaced the pushes with {0, 100, 200} N. This grid was chosen *before* training, by evaluating existing policies on candidate grids:
+  - the pretrained policy scores 0.43;
+  - the uniform policy trained on the standard grid leaves only 2 of 36 bins on the new grid unsolved.
+- **Prediction, written down before the runs:** FAS > uniform.
+
+| Method | Final success | Worst 25% | AUC | OOD (standard hopper OOD grid) |
+|---|---|---|---|---|
+| Uniform DR | 0.684 | 0.282 | 0.584 | 0.307 |
+| FAS | **0.723** (+0.039, t = 3.5, CI [0.018, 0.058]) | **0.358** (+0.076, t = 2.7, CI [0.029, 0.124]) | 0.601 (+0.017, t = 2.6, CI [0.006, 0.029]) | 0.303 |
+| FAS + LP gate | 0.715 (+0.031, t = 1.9, CI [0.001, 0.058]) | 0.316 (t = 1.0) | **0.610** (+0.026, t = 3.4) | 0.305 |
+
+- **Result.** The prediction holds. On the same robot where FAS gave nothing on the standard grid, it now improves final success, worst-case bins and speed. With 5 seeds the final and worst-25% gaps became *more* significant (t 2.1 → 3.5 and 1.7 → 2.7), and all three CIs exclude 0. FAS's AUC is higher than uniform's for every seed index.
+- **Where the gain comes from.** It is all in the 21 frontier bins (0.49 → 0.56). The 15 solved bins are unchanged (0.96).
+- **OOD is unchanged.** The hopper OOD grid contains 375 N pushes, far beyond the 200 N maximum seen in training on this grid.
+- **Takeaway for RQ2:** the exploration / stability trade-off of failure-focused sampling is governed by *learnability* of the failed conditions, not by critic stability.
+
+**3e. Exploratory: gating FAS by learning progress (FAS + LP gate).**
+- **Rule.** w = (failure + δ)^α · (LP / max LP + 0.25). This down-weights bins whose failure rate has stopped changing.
+- **walker2d (5 seeds):** best method overall.
+  - Final success 0.896 vs 0.836 for uniform (t = 8.2) and 0.874 for FAS.
+  - Worst 25%: 0.638 vs 0.498.
+  - OOD: 0.457 vs 0.395.
+  - AUC: 0.793 vs 0.754.
+  - All four bootstrap CIs exclude 0.
+- **halfcheetah (3 seeds):** small gains: 0.794 vs 0.777, AUC t = 2.6.
+- **hopper standard grid:** no help (0.549). The gate does not identify the unlearnable bins: their failure rate fluctuates as much as frontier bins' (|Δ failure| 0.053 vs 0.088).
+- **How to present it:** a promising variant, not the main method. It was designed after seeing the main results, so it should be labeled post hoc.
+
+## 4. RQ3: RL vs RFT on discovered successes (`fig_rq3`, walker2d and hopper)
 
 - **RFT setup.** Diffusion behavior cloning from the same EMA initialization, trained on all successful *training* episodes that the corresponding RL run collected. The training-step budget is matched, and actions are clipped to ±1, i.e. the actions actually executed.
 - **Results** (train / OOD balanced success):
@@ -146,6 +200,16 @@ This is the skeleton of the report's Experiments / Results section for the three
   - FAS's successes make a better RFT dataset than uniform's (0.820 vs 0.752).
   - Successes from the frozen policy give nothing: exploration is what matters.
   - Mixing in nominal-only D4RL demos hurts.
+- **hopper (seeds 3–5, train / OOD):**
+
+  | Source of successes | RL policy | RFT |
+  |---|---|---|
+  | FAS run | 0.550 / 0.296 | 0.468 / 0.258 |
+  | Uniform run | 0.568 / 0.283 | 0.469 / 0.225 |
+
+  - RFT recovers only about 45% of RL's gain over the pretrained policy (0.394), vs about 85% on walker2d.
+  - RFT on FAS's successes generalizes better OOD (0.258 vs 0.225).
+- **Conclusion: whether RFT suffices is task-dependent.** Where successes are plentiful and diverse (walker2d), imitating them gets most of the way. On hopper, where success is rarer and more fragile, the RL update matters more.
 - **Relation to openpi-comet-style RFT:** ours is the same recipe (successes only, flow/diffusion BC loss, optional demo mix) applied per run.
 
 ## 5. Related baselines (answer to the TA)
@@ -170,7 +234,9 @@ This is the skeleton of the report's Experiments / Results section for the three
 
 ## 6. Limitations
 
-- 3 seeds for most comparisons, 5 for walker2d main.
+- 3 seeds for most comparisons; 5–6 for the main uniform vs FAS comparison. Bootstrap CIs with so few seeds are optimistic.
+- The hopper "learnable grid" result (3d) is a single 3-seed test of a pre-registered prediction. It supports the learnability explanation but does not prove it in general.
+- FAS + LP gate was designed after seeing the main results.
 - 36 discrete bins.
 - Success criteria were calibrated per task.
 - The DPPO time-limit and critic-scale quirks limit how precisely critic error can be measured.
