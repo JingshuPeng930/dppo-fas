@@ -13,6 +13,10 @@ source: unnamed           # label of the trajectory source (e.g. fas_a3, uniform
 traj_dirs: ???            # fine-tuning run dir(s) / glob(s) holding success_trajs/
 max_itr: null             # only use episodes collected up to this RL iteration (null = all)
 demo_path: ${oc.env:DPPO_DATA_DIR}/gym/${env}/train.npz  # original pretraining demos (only if demo_weight > 0)
+min_ep_len: null          # margin test: keep successes of >= this many env steps (null = all)
+min_return: null          # margin test: keep successes with return >= this (null = all)
+min_itr: null             # staleness test: only episodes from RL iteration >= this (null = all)
+draws_per_epoch: null     # fixed rollout draws per epoch (distillation: match an RFT run's step budget)
 demo_weight: 0.0          # openpi-comet mix = 0.6; then n_epochs=4 keeps the 10-epoch step budget
 name: ${env}_rft_${source}_ta${horizon_steps}_td${denoising_steps}
 logdir: ${oc.env:DPPO_LOG_DIR}/gym-rft/${name}/${now:%Y-%m-%d}_${now:%H-%M-%S}_${seed}
@@ -75,4 +79,8 @@ train_dataset:
   action_clip: 1.0       # executed (env-clipped) action; see agent/dataset/rft.py
   demo_path: ${demo_path}
   demo_weight: ${demo_weight}
+  min_ep_len: ${min_ep_len}
+  min_return: ${min_return}
+  min_itr: ${min_itr}
+  draws_per_epoch: ${draws_per_epoch}
   device: ${device}

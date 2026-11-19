@@ -9,7 +9,7 @@ CUDA_VISIBLE_DEVICES=$G N_ITR=200 taskset -c 64-127,192-255 bash scripts/fas/fin
   fas.score=failure_progress fas.alpha=3.0 fas.beta=0.9 ++fas.lp_floor=0.25 ++env.wrappers.mujoco_disturbance.reward_delay=$K \
   > ~/dppo_fas/runs/$T/fasp${K}_seed$S.log 2>&1
 echo "train exit $?"
-CK=$(ls -d $DPPO_LOG_DIR/gym-finetune/${E}_ppo_diffusion_mlp_fasp${K}_*/*_$S | tail -1)/checkpoint/state_199.pt
+CK=$(ls -td $DPPO_LOG_DIR/gym-finetune/${E}_ppo_diffusion_mlp_fasp${K}_*/*_$S | head -1)/checkpoint/state_199.pt  # newest = the run just trained (hopper has gv2 and gv3 dirs)
 for SPLIT in train ood; do
   CUDA_VISIBLE_DEVICES=$G taskset -c 64-127,192-255 bash scripts/fas/evaluate.sh $T $CK $SPLIT > /dev/null 2>&1; echo "eval $SPLIT exit $?"
 done

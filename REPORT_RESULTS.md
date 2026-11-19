@@ -47,27 +47,29 @@ This is the skeleton of the report's Experiments / Results section for the three
 | | walker2d train | walker2d OOD | hopper train | hopper OOD | halfcheetah train | halfcheetah OOD |
 |---|---|---|---|---|---|---|
 | Pretrained (EMA) | 0.464 | 0.288 | 0.394 | 0.250 | 0.511 | 0.263 |
-| DPPO (nominal) | 0.700 | 0.325 | 0.451 | 0.275 | 0.645 | 0.317 |
-| Uniform DR | 0.836 | 0.395 | 0.561 | 0.279 | 0.777 | 0.475 |
-| FAS | 0.874 | 0.435 | 0.557 | 0.279 | 0.786 | 0.488 |
-| SGS | 0.871 | 0.429 | 0.498 | 0.271 | 0.771 | 0.475 |
-| LP | 0.849 | 0.404 | **0.576** | 0.283 | 0.769 | 0.471 |
-| PLR | 0.808 | 0.388 | 0.500 | 0.267 | – | – |
-| FAS + LP gate (§3e) | **0.896** | **0.457** | 0.549 | **0.296** | **0.794** | **0.492** |
+| DPPO (nominal) | 0.695 | 0.325 | 0.463 | 0.278 | 0.636 | 0.312 |
+| Uniform DR | 0.836 | 0.395 | 0.561 | 0.279 | 0.761 | 0.459 |
+| FAS | 0.874 | 0.435 | 0.557 | 0.279 | 0.790 | 0.481 |
+| SGS | 0.866 | 0.418 | 0.496 | 0.265 | 0.765 | 0.460 |
+| LP | 0.854 | 0.418 | **0.568** | **0.287** | 0.757 | 0.450 |
+| PLR | 0.790 | 0.370 | 0.493 | 0.272 | 0.712 | 0.402 |
+| FAS + LP gate (§3e) | **0.896** | **0.457** | 0.557 | 0.278 | **0.795** | **0.498** |
 
-(Seeds: uniform and FAS 5 on walker2d and halfcheetah, 6 on hopper; FAS + LP gate 5 on walker2d; everything else 3.)
+(Seeds: at least 5 per cell; uniform and FAS 6 on hopper and 8 on halfcheetah, where the RQ3 source runs add seeds. Extra seeds came from `scripts/fas/run_table1_seeds.sh` and `run_rq3_more.sh` with unchanged configs. The hopper FAS + LP seeds 3–4 were first evaluated on the wrong checkpoint by a glob bug in `run_fasp.sh`, since fixed and re-evaluated.)
 
 **Uncertainty.** `figs/comparisons.csv` gives, for every method vs uniform, the difference, Welch t and a 95% percentile bootstrap CI over seeds.
 - Walker2d FAS: the CIs for train, worst 25%, OOD and AUC all exclude 0.
-- Halfcheetah and hopper FAS: no CI excludes 0.
-- With 3–6 seeds a bootstrap CI is too narrow. Say this in a footnote and treat |t| as the main guide.
+- Halfcheetah FAS (8 seeds): train (+2.9, t = 2.0) and worst 25% (+5.1, t = 2.0) CIs exclude 0; OOD and AUC do not.
+- Hopper FAS: no CI excludes 0.
+- With 5–8 seeds a bootstrap CI is still too narrow. Say this in a footnote and treat |t| as the main guide.
 
 **Claims, in order of strength:**
 
 1. **Training under disturbances matters most.** Uniform DR beats nominal DPPO by 10–14 points on train and up to 14 on OOD.
 2. **FAS adds a smaller, task-dependent gain on top of uniform:**
    - walker2d: +3.9 points train (t = 3.8), +4.0 OOD (t = 1.9);
-   - hopper (6 seeds) and halfcheetah (5 seeds): within noise (|t| < 1).
+   - halfcheetah (8 seeds): +2.9 train (t = 2.0), +5.1 worst 25% (t = 2.0), +2.2 OOD (t = 1.0), AUC t = 1.4;
+   - hopper (6 seeds): within noise (|t| < 1).
    - Section 3d shows *why* hopper shows no gain, and that FAS does help on hopper once its unlearnable bins are removed.
 3. **The gain concentrates in the hard bins** (Table 2 below).
    - walker2d worst 25% of bins: 0.576 vs 0.498 for uniform.
@@ -78,16 +80,16 @@ This is the skeleton of the report's Experiments / Results section for the three
    |---|---|---|
    | walker2d | 0.780 vs 0.754, t = 2.75 | 80 vs 100 |
    | hopper | 0.453 vs 0.456, t = −0.8 | 135 vs 115 (FAS slower early) |
-   | halfcheetah | 0.687 vs 0.684, t = 0.4 | 80 vs 80 |
+   | halfcheetah (8 seeds) | 0.687 vs 0.676, t = 1.4 | 80 vs 80 |
    | hopper, learnable grid (§3d, 5 seeds) | 0.601 vs 0.584, t = 2.6 | – |
 
-   - SGS is fastest on walker2d (median 50) but slowest on hopper.
+   - SGS is fastest on walker2d (median 60) but slowest on hopper.
    - FAS + LP gate on walker2d: AUC 0.793 (t = 7.6), median 70 iterations.
    - Write this honestly: there is no consistent speed-up across tasks.
 
 **Why the gain is modest (discussion):**
 - **On the original grid, 24 of 36 bins are already solved by uniform DR.** On walker2d, picking the best method per bin gives only 0.888, against 0.836 for uniform.
-- **halfcheetah's hard bins are not limited by data.** All methods sit at about 0.42 there, even though FAS spends 65% of its samples on them.
+- **halfcheetah's gain is in the frontier bins.** On the 12 bins where uniform has 0.2–0.8 success: uniform 0.442, FAS 0.492, FAS + LP 0.520; the 23 solved bins are ~0.95–0.97 for all. (With 5 seeds this looked like no gain; at 8 seeds it is small but significant.)
 
 **Harder grid (walker2d, `fig_hard`).** Grid: mass 1–1.75 × friction 0.35–1 × push 150–450 N; the pretrained policy scores 0.22.
 
@@ -179,13 +181,13 @@ This is the skeleton of the report's Experiments / Results section for the three
   - OOD: 0.457 vs 0.395.
   - AUC: 0.793 vs 0.754.
   - All four bootstrap CIs exclude 0.
-- **halfcheetah (3 seeds):** small gains: 0.794 vs 0.777, AUC t = 2.6.
-- **hopper main grid:** no help (0.549). The gate does not identify the unlearnable bins: their failure rate fluctuates as much as frontier bins' (|Δ failure| 0.053 vs 0.088).
+- **halfcheetah (5 seeds):** best method: 0.795 vs 0.761 (t = 2.7), worst 25% 0.407 vs 0.333 (t = 3.2), AUC 0.705 vs 0.676 (t = 3.8); all three CIs exclude 0. OOD 0.498 vs 0.459 (t = 1.4).
+- **hopper main grid (5 seeds):** no help (0.557; AUC lower, t = −3.9). The gate does not identify the unlearnable bins: their failure rate fluctuates as much as frontier bins' (|Δ failure| 0.053 vs 0.088).
 - **How to present it:** a promising variant, not the main method. It was designed after seeing the main results, so it should be labeled post hoc.
 
-## 4. RQ3: RL vs RFT on discovered successes (`fig_rq3`, walker2d and hopper)
+## 4. RQ3: RL vs RFT on discovered successes (`fig_rq3`, all three tasks)
 
-- **RFT setup.** Diffusion behavior cloning from the same EMA initialization, trained on all successful *training* episodes that the corresponding RL run collected. The training-step budget is matched, and actions are clipped to ±1, i.e. the actions actually executed.
+- **RFT setup.** Diffusion behavior cloning from the same EMA initialization, trained on all successful *training* episodes that the corresponding RL run collected. Training runs 10 epochs over each source run's successes, and actions are clipped to ±1, i.e. the actions actually executed.
 - **Results** (train / OOD balanced success):
 
   | Source of successes | RL policy | RFT | RFT + 60% D4RL demos |
@@ -200,31 +202,66 @@ This is the skeleton of the report's Experiments / Results section for the three
   - FAS's successes make a better RFT dataset than uniform's (0.820 vs 0.752).
   - Successes from the frozen policy give nothing: exploration is what matters.
   - Mixing in nominal-only D4RL demos hurts.
-- **hopper (seeds 3–5, train / OOD):**
+- **hopper (source seeds 3–5, train / OOD):**
 
-  | Source of successes | RL policy | RFT |
-  |---|---|---|
-  | FAS run | 0.550 / 0.296 | 0.468 / 0.258 |
-  | Uniform run | 0.568 / 0.283 | 0.469 / 0.225 |
+  | Source of successes | RL policy | RFT | RFT + 60% D4RL demos |
+  |---|---|---|---|
+  | FAS run | 0.550 / 0.296 | 0.468 / 0.258 | 0.420 / 0.283 |
+  | Uniform run | 0.568 / 0.283 | 0.469 / 0.225 | 0.424 / 0.233 |
 
   - RFT recovers only about 45% of RL's gain over the pretrained policy (0.394), vs about 85% on walker2d.
   - RFT on FAS's successes generalizes better OOD (0.258 vs 0.225).
-- **Conclusion: whether RFT suffices is task-dependent.** Where successes are plentiful and diverse (walker2d), imitating them gets most of the way. On hopper, where success is rarer and more fragile, the RL update matters more.
+  - Demos cost about 5 points of train success; the OOD change is within noise.
+- **halfcheetah (source seeds 5–7, train / OOD; these RL runs also count as extra Table 1 seeds):**
+
+  | Source of successes | RL policy | RFT | RFT + 60% D4RL demos |
+  |---|---|---|---|
+  | FAS run | 0.797 / 0.471 | 0.665 / 0.383 | 0.620 / 0.312 |
+  | Uniform run | 0.733 / 0.433 | 0.628 / 0.371 | 0.612 / 0.342 |
+
+  - RFT recovers 53–54% of RL's gain over the pretrained policy (0.511).
+  - FAS's successes give a slightly better RFT policy (0.665 vs 0.628, within one sd at n=3).
+  - Demos lower train success again (2–5 points) and do not help OOD consistently.
+- **Conclusion:** imitation is not the bottleneck: BC on the final RL policy's successes matches RL on all three tasks. RFT on the successes accumulated during training recovers 78–85% of the gain on walker2d but only about half on hopper and halfcheetah, because those successes come largely from earlier policies. Across all three tasks, FAS's successes are an equal or better RFT dataset than uniform's, and nominal-only demos never help train success.
+- **Why RFT falls short on hopper / halfcheetah: margin test** (`scripts/fas/run_rft_margin.sh`, same source runs, same gradient steps via `match_full_steps`).
+  - Diagnosis: most saved successes barely pass the criterion. On hopper 88–98% of the successes fall after step 300 (median length 374–422); on halfcheetah they cluster just above 4000 (10th pct ≈ 4050, median ≈ 4300). On walker2d the median success runs ~1000 steps.
+  - Test: keep only successes with a margin (hopper ≥ 600 steps, halfcheetah return ≥ 4500), train/OOD:
+
+    | Task, source | RFT (all successes) | RFT (margin only) | Welch t (train) |
+    |---|---|---|---|
+    | hopper, FAS | 0.468 / 0.258 | 0.463 / 0.233 | −0.5 |
+    | hopper, uniform | 0.469 / 0.225 | 0.474 / 0.225 | 1.0 |
+    | halfcheetah, FAS | 0.665 / 0.383 | 0.681 / 0.400 | 0.5 |
+    | halfcheetah, uniform | 0.628 / 0.371 | 0.651 / 0.383 | 0.5 |
+
+  - Result: no significant change, so near-threshold labels do not explain the gap. Also ruled out: bin coverage (≥ 140 successes in every bin; count vs RL−RFT gap has no consistent sign) and early-training data (~45% from the first 100 iterations on every task, walker2d included).
+- **Why RFT falls short: staleness, not imitation** (`scripts/fas/run_rft_whygap.sh`, same source runs, same gradient steps). Recovered share of the RL gain on the train grid (FAS / uniform source):
+
+  | Task | RFT (all successes) | RFT (last 50 iterations only) | BC on the final RL policy's successes |
+  |---|---|---|---|
+  | walker2d | 0.85 / 0.79 | 0.94 / 0.90 | 1.00 / 1.02 |
+  | hopper | 0.47 / 0.43 | 0.71 / 0.77 | 1.02 / 0.96 |
+  | halfcheetah | 0.54 / 0.52 | 0.70 / 0.88 | 0.98 / 1.15 |
+
+  - Distillation: 100 deterministic rollouts per bin of the final RL policy on the train grid (seed 2000+s, not the eval episodes), successes only (2–3.3k episodes), BC with the same steps as the full RFT. Train success matches RL on every task (e.g. hopper 0.553 / 0.560 vs RL 0.550 / 0.568; t vs RFT ≈ 5), and OOD as well.
+  - So diffusion BC can reproduce the RL policy; what limits RFT is that it imitates successes accumulated over training, most from earlier, noisier (stochastic exploration) policies. The last-50-iteration RFT closes most of the gap; the rest (late vs distillation) is consistent with exploration noise in the training rollouts.
+  - Why walker2d is the exception: staleness costs it least (+9–11 points of recovery from late-only data vs +24–34 on hopper and +16–36 on halfcheetah).
 - **Relation to openpi-comet-style RFT:** ours is the same recipe (successes only, flow/diffusion BC loss, optional demo mix) applied per run.
 
 ## 5. Related baselines (answer to the TA)
 
 - **SGS and learning progress:** implemented, see Tables 1 and 2.
-  - SGS ties FAS on walker2d, is worse on hopper, and is fastest on walker2d.
-  - LP is between uniform and FAS.
-- **PLR** (Jiang et al. 2021, positive-value-loss score, walker2d and hopper, 3 seeds): *worse than uniform*.
+  - SGS ties FAS on walker2d, is worse on hopper, matches uniform on halfcheetah, and is fastest on walker2d.
+  - LP is between uniform and FAS on walker2d and within noise of uniform elsewhere.
+- **PLR** (Jiang et al. 2021, positive-value-loss score, 5 seeds per task): *worse than uniform on all three tasks*.
 
   | | train | AUC | worst 25% |
   |---|---|---|---|
-  | walker2d | 0.808 vs 0.836 | 0.747 vs 0.754 | 0.433 vs 0.498 |
-  | hopper | 0.500 vs 0.554 | 0.423 vs 0.459, t = −5.0 | — |
+  | walker2d | 0.790 vs 0.836, t = −3.4 | 0.743 vs 0.754, t = −2.1 | 0.389 vs 0.498 |
+  | hopper | 0.493 vs 0.561, t = −3.9 | 0.426 vs 0.456, t = −6.3 | 0.102 vs 0.141 |
+  | halfcheetah | 0.712 vs 0.761, t = −2.9 | 0.647 vs 0.676, t = −3.0 | 0.258 vs 0.333 |
 
-  - **Why:** PLR puts its sampling mass on the *easy* bins.
+  - **Why:** PLR puts its sampling mass on the *easy* bins (sampling statistics from the first 3 seeds).
     - walker2d: 87% on bins uniform already solves.
     - hopper: 66% on solved bins, 7% on unsolved ones.
     - Correlation between PLR's sampling probability and uniform's per-bin success: +0.73 / +0.60.

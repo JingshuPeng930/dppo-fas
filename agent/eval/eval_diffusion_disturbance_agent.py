@@ -8,6 +8,9 @@ with this agent and the same eval config, so test conditions are identical.
 Outputs in logdir:
   result.npz   -- per-condition arrays + summary scalars
   result.json  -- human-readable summary incl. per-parameter marginals
+  success_trajs/itr_0000.npz -- only with ++save_success_trajs=true: the successful episodes, in the
+                  format the RL agent saves for RFT (RQ3 distillation test: BC on the final policy's own
+                  successes, agent/dataset/rft.py)
 """
 
 import json
@@ -36,6 +39,8 @@ class EvalDiffusionDisturbanceAgent(EvalAgent):
         self.success_return_threshold = cfg.success.get("return_threshold", None)
         self.success_min_steps = cfg.success.get("min_steps", None)
         self.result_json_path = self.result_path.replace(".npz", ".json")
+        self.save_success_trajs = bool(cfg.get("save_success_trajs", False))
+        self.traj_drop_last = int(cfg.get("traj_drop_last", 25))  # as in the RL agent: do not imitate the fall
 
     def run(self):
         timer = Timer()
@@ -49,6 +54,8 @@ class EvalDiffusionDisturbanceAgent(EvalAgent):
         prev_obs_venv = self.reset_env_all()
         n_done = np.zeros(E, dtype=int)
         episodes = []  # (cond, return, len, terminated)
+        bufs = [[] for _ in range(E)]
+        saved = []  # (cond, return, len, terminated, [(obs, act), ...])
         steps_per_ep = math.ceil(self.max_episode_steps / self.act_steps)
         max_steps = int(n_target.max() * steps_per_ep * 1.1) + 10
 
@@ -61,20 +68,31 @@ class EvalDiffusionDisturbanceAgent(EvalAgent):
                 cond = {"state": torch.from_numpy(prev_obs_venv["state"]).float().to(self.device)}
                 samples = self.model(cond=cond, deterministic=True)
                 action_venv = samples.trajectories.cpu().numpy()[:, : self.act_steps]
+            if self.save_success_trajs:
+                for i in range(E):
+                    bufs[i].append((np.array(prev_obs_venv["state"][i], np.float32), np.array(action_venv[i], np.float32)))
             prev_obs_venv, _, _, _, info_venv = self.venv.step(action_venv)
             for i, info in enumerate(info_venv):
                 if "fas_ep_cond" in info and n_done[i] < n_target[i]:
                     c = int(np.asarray(info["fas_ep_cond"]).reshape(-1)[-1])
                     assert c == schedules[i][n_done[i]], "schedule / outcome mismatch"
-                    episodes.append(
-                        (
-                            c,
-                            float(np.asarray(info["fas_ep_return"]).reshape(-1)[-1]),
-                            int(np.asarray(info["fas_ep_len"]).reshape(-1)[-1]),
-                            bool(np.asarray(info["fas_ep_terminated"]).reshape(-1)[-1]),
-                        )
+                    ep = (
+                        c,
+                        float(np.asarray(info["fas_ep_return"]).reshape(-1)[-1]),
+                        int(np.asarray(info["fas_ep_len"]).reshape(-1)[-1]),
+                        bool(np.asarray(info["fas_ep_terminated"]).reshape(-1)[-1]),
                     )
+                    episodes.append(ep)
                     n_done[i] += 1
+                    if self.save_success_trajs and episode_success(
+                        np.array([ep[1]]), np.array([ep[3]]), self.success_criterion, self.success_return_threshold,
+                        ep_len=np.array([ep[2]]), min_steps=self.success_min_steps,
+                    )[0]:
+                        steps = bufs[i][: -self.traj_drop_last] if ep[3] and self.traj_drop_last > 0 else bufs[i]
+                        if steps:
+                            saved.append((*ep, steps))
+                if "fas_ep_cond" in info:
+                    bufs[i] = []  # the env auto-reset: the next chunk starts a new episode
         if len(episodes) < len(queue):
             log.warning(f"Only {len(episodes)}/{len(queue)} episodes finished")
 
@@ -118,6 +136,22 @@ class EvalDiffusionDisturbanceAgent(EvalAgent):
         log.info("eval: " + " | ".join(f"{k} {v:.4f}" for k, v in summary.items()))
         for name, m in marginals.items():
             log.info(f"  success by {name}: " + ", ".join(f"{v:g}->{s:.3f}" for v, s in m["success"].items()))
+
+        if self.save_success_trajs and saved:
+            import os
+
+            d = os.path.join(os.path.dirname(self.result_path), "success_trajs")
+            os.makedirs(d, exist_ok=True)
+            np.savez_compressed(
+                os.path.join(d, "itr_0000.npz"),
+                obs=np.concatenate([np.stack([o for o, _ in st]) for *_, st in saved]),
+                act=np.concatenate([np.stack([a for _, a in st]) for *_, st in saved]),
+                cond=np.concatenate([np.full(len(st), c) for c, *_, st in saved]).astype(np.int16),
+                ep=np.concatenate([np.full(len(st), k) for k, (*_, st) in enumerate(saved)]).astype(np.int32),
+                itr=np.int32(0),
+                episodes=np.array([(k, c, r, l, t) for k, (c, r, l, t, _) in enumerate(saved)], dtype=np.float64),
+            )
+            log.info(f"saved {len(saved)} successful episodes to {d}")
 
         np.savez(
             self.result_path,

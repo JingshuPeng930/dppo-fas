@@ -35,7 +35,7 @@ Diffusion policies fine-tuned with reinforcement learning in a single nominal en
 Domain randomization fixes part of this, but it spends most of its samples on conditions the policy already solves.
 We study \emph{Failure-Aware Sampling} (\fas{}): during DPPO fine-tuning, training conditions are sampled in proportion to the policy's current failure rate on them.
 On walker2d, \fas{} improves success over uniform domain randomization by 3.9 points on the training grid, 7.8 points on the hardest quarter of conditions and 4.0 points on held-out conditions; a learning-progress-gated variant raises these gains to 6.0, 14.0 and 6.2 points.
-On hopper and halfcheetah \fas{} gives no gain, and sparse rewards make it worse on hopper.
+On halfcheetah the gain is smaller (2.9 points, $t=2.0$, 8 seeds); on hopper \fas{} gives no gain, and sparse rewards make it worse.
 We trace this to \emph{learnability}: hopper's grid contains a disturbance no method learns, and once it is removed, \fas{} beats uniform sampling as we predicted before the run.
 Critic error is not the bottleneck: \fas{} never increases it, and a value-error-based curriculum (PLR) performs worse than uniform sampling.
 \todo{one sentence on the LEGO results.}
@@ -114,7 +114,7 @@ The sampler only changes \emph{which} condition each environment is reset to: th
 \textbf{Learning-progress gate (\fas{}+LP).} \fas{} cannot tell a hard-but-learnable condition from an unlearnable one, since both have a high failure rate.
 As a post-hoc variant, we multiply the weight by a learning-progress term, $w_t(c) = (f_t(c)+\delta)^\alpha\,\big(\mathrm{LP}_t(c)/\max_{c'}\mathrm{LP}_t(c') + \lambda\big)$, where $\mathrm{LP}_t = |f^{\text{fast}}_t - f^{\text{slow}}_t|$ is the gap between two failure EMAs (rates 0.3 and 0.1) and $\lambda=0.25$.
 
-\textbf{RFT (RQ3).} To separate \emph{discovering} successes from \emph{learning} from them, we save every successful training episode of an RL run. We then train the pretrained diffusion policy on these episodes with the standard denoising loss, using the same number of gradient steps for every source run.
+\textbf{RFT (RQ3).} To separate \emph{discovering} successes from \emph{learning} from them, we save every successful training episode of an RL run. We then train the pretrained diffusion policy on these episodes with the standard denoising loss, for 10 epochs over each source run's successes.
 
 %===============================================================================
 \section{Experimental Setup}
@@ -130,7 +130,7 @@ The OOD grid has 8 held-out extreme bins: mass $\{0.6, 1.75\}$, friction $\{0.35
 \textbf{Success:} the robot does not fall within the first 500 steps (walker2d) or 300 steps (hopper), or it reaches a return of at least 4000 (halfcheetah). These thresholds are calibrated so that the pretrained policy has intermediate success in most bins.
 Each checkpoint is evaluated deterministically for 10 episodes per bin.
 We report final balanced success, the mean success of the worst 25\% of bins, OOD success, and the AUC of the in-training evaluation curve (mean balanced success over training) as a measure of sample efficiency.
-Unless stated otherwise we use 3 seeds, and 5--6 seeds for the main uniform vs.\ \fas{} comparison. $t$ denotes Welch's $t$ against uniform DR.
+Every cell of Table~\ref{tab:main} has at least 5 seeds (uniform DR and \fas{}: 6 on hopper and 8 on halfcheetah, where the RQ3 source runs add seeds); ablations use 3 unless stated. Seeds beyond the first three were added later with unchanged configurations. $t$ denotes Welch's $t$ against uniform DR.
 
 \textbf{Baselines.} Pretrained policy; DPPO on the nominal environment; uniform DR; SGS (Beta kernel at target success 0.66, as in~\citep{zhang2026sgs}); learning progress (LP, weight $=|f^{\text{fast}}-f^{\text{slow}}|$); and PLR (weight = mean positive GAE advantage per bin, using the same $\alpha$ and $\beta$ as \fas{}). All adaptive methods use the sampler form of Eq.~\eqref{eq:fas}.
 
@@ -145,7 +145,7 @@ Unless stated otherwise we use 3 seeds, and 5--6 seeds for the main uniform vs.\
 
 \begin{table}[t]
 \centering
-\caption{Final balanced success on the main training grid / held-out OOD grid (mean over seeds). Best adaptive method in bold. Seeds: uniform and \fas{} 5 (hopper 6), \fas{}+LP 5 on walker2d, all others 3.}
+\caption{Final balanced success on the main training grid / held-out OOD grid (mean over seeds). Best adaptive method in bold. At least 5 seeds per cell; uniform DR and \fas{} 6 on hopper and 8 on halfcheetah.}
 \label{tab:main}
 \small
 \begin{tabular}{lcccccc}
@@ -155,14 +155,14 @@ Unless stated otherwise we use 3 seeds, and 5--6 seeds for the main uniform vs.\
 Method & train & OOD & train & OOD & train & OOD \\
 \midrule
 Pretrained & 0.464 & 0.288 & 0.394 & 0.250 & 0.511 & 0.263 \\
-DPPO (nominal) & 0.700 & 0.325 & 0.451 & 0.275 & 0.645 & 0.317 \\
-Uniform DR & 0.836 & 0.395 & 0.561 & 0.279 & 0.777 & 0.475 \\
+DPPO (nominal) & 0.695 & 0.325 & 0.463 & 0.278 & 0.636 & 0.312 \\
+Uniform DR & 0.836 & 0.395 & 0.561 & 0.279 & 0.761 & 0.459 \\
 \midrule
-SGS~\citep{zhang2026sgs} & 0.871 & 0.429 & 0.498 & 0.271 & 0.771 & 0.475 \\
-LP~\citep{portelas2020alpgmm} & 0.849 & 0.404 & \textbf{0.576} & 0.283 & 0.769 & 0.471 \\
-PLR~\citep{jiang2021plr} & 0.808 & 0.388 & 0.500 & 0.267 & -- & -- \\
-\fas{} (ours) & 0.874 & 0.435 & 0.557 & 0.279 & 0.786 & 0.488 \\
-\fas{}+LP (ours, post hoc) & \textbf{0.896} & \textbf{0.457} & 0.549 & \textbf{0.296} & \textbf{0.794} & \textbf{0.492} \\
+SGS~\citep{zhang2026sgs} & 0.866 & 0.418 & 0.496 & 0.265 & 0.765 & 0.460 \\
+LP~\citep{portelas2020alpgmm} & 0.854 & 0.418 & \textbf{0.568} & \textbf{0.287} & 0.757 & 0.450 \\
+PLR~\citep{jiang2021plr} & 0.790 & 0.370 & 0.493 & 0.272 & 0.712 & 0.402 \\
+\fas{} (ours) & 0.874 & 0.435 & 0.557 & 0.279 & 0.790 & 0.481 \\
+\fas{}+LP (ours, post hoc) & \textbf{0.896} & \textbf{0.457} & 0.557 & 0.278 & \textbf{0.795} & \textbf{0.498} \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -175,11 +175,11 @@ PLR~\citep{jiang2021plr} & 0.808 & 0.388 & 0.500 & 0.267 & -- & -- \\
 \end{figure}
 
 Table~\ref{tab:main} and Fig.~\ref{fig:curves} summarize RQ1.
-\textbf{Training under disturbances matters most.} Uniform DR improves on nominal DPPO by 11--14 points on the training grid.
+\textbf{Training under disturbances matters most.} Uniform DR improves on nominal DPPO by 10--14 points on the training grid.
 \textbf{\fas{} adds a task-dependent gain.} On walker2d, \fas{} improves train success by 3.9 points ($t=3.8$), OOD success by 4.0 ($t=1.9$), worst-25\% success from 0.498 to 0.576, and AUC from 0.754 to 0.780 ($t=2.8$; median iterations to 0.8 success: 80 vs.\ 100).
-On hopper (6 seeds) and halfcheetah (5 seeds), \fas{} and uniform DR are within noise ($|t|<1$).
+On halfcheetah (8 seeds) the gain is smaller: 2.9 points on the training grid ($t=2.0$) and 5.1 on the worst-25\% bins ($t=2.0$), both with bootstrap CIs excluding zero; OOD ($+2.2$) and AUC are within noise. On hopper (6 seeds) \fas{} and uniform DR are within noise ($|t|<1$).
 \textbf{\fas{}+LP} is the best method on walker2d: 0.896 train ($t=8.2$), 0.638 worst-25\%, 0.457 OOD, and AUC 0.793 ($t=7.6$); for all four, the 95\% bootstrap CI of the difference to uniform excludes zero.
-On halfcheetah it adds a small speed-up (AUC $t=2.6$). On hopper it does not help.
+It is also the best method on halfcheetah: 0.795 train ($t=2.7$), 0.407 worst-25\% ($t=3.2$) and AUC $t=3.8$, all with CIs excluding zero. On hopper it does not help.
 Per-bin analysis (as in Fig.~\ref{fig:v3}, right) shows where the gains come from: the bins that uniform DR already solves are nearly identical across methods, and the improvement comes from the frontier bins.
 
 \subsection{RQ2: What governs the exploration--stability trade-off?}
@@ -222,8 +222,8 @@ All of the gain is on frontier bins (0.49$\to$0.56); solved bins stay at 0.96.
 \subsection{Comparison with adaptive curricula}
 \label{sec:baselines}
 
-SGS matches \fas{} on walker2d and learns fastest there (median 50 iterations to 0.8 success), but it is the worst method on hopper (0.498). LP lies between uniform DR and \fas{}.
-\textbf{PLR is worse than uniform DR} on both tasks (walker2d 0.808, hopper 0.500; hopper AUC $t=-4.7$).
+SGS matches \fas{} on walker2d and learns fastest there (median 60 iterations to 0.8 success), but it is among the worst methods on hopper (0.496) and no better than uniform DR on halfcheetah. LP lies between uniform DR and \fas{} on walker2d and is within noise of uniform DR elsewhere.
+\textbf{PLR is worse than uniform DR} on all three tasks (walker2d 0.790, hopper 0.493, halfcheetah 0.712; $t$ between $-2.9$ and $-3.9$).
 The reason is that PLR samples the \emph{easy} bins: 87\% (walker2d) and 66\% (hopper) of its mass goes to bins that uniform DR already solves, and its sampling probability correlates positively with uniform's per-bin success ($+0.73$/$+0.60$).
 In dense-reward locomotion, the positive value loss scales with the return and the episode length, so it tracks how long the policy survives rather than how much it can still learn.
 Failure rate is a more direct difficulty signal here, which is consistent with the critic analysis above.
@@ -233,7 +233,7 @@ Failure rate is a more direct difficulty signal here, which is consistent with t
 
 \begin{table}[t]
 \centering
-\caption{RFT on the successful training episodes of each source run (train / OOD success). walker2d: seeds 0--2; hopper: seeds 3--5.}
+\caption{RFT on the successful training episodes of each source run (train / OOD success, mean over source seeds). Source seeds: walker2d 0--2, hopper 3--5, halfcheetah 5--7.}
 \label{tab:rft}
 \small
 \begin{tabular}{llccc}
@@ -244,17 +244,21 @@ Task & Source of successes & RL policy & RFT & RFT + 60\% D4RL demos \\
 & Uniform DR run & 0.831 / 0.400 & 0.752 / 0.383 & 0.635 / 0.350 \\
 & Frozen pretrained & 0.464 / 0.288 & 0.454 / 0.275 & 0.488 / 0.325 \\
 \midrule
-\multirow{2}{*}{hopper} & \fas{} run & 0.550 / 0.296 & 0.468 / \textbf{0.258} & -- \\
-& Uniform DR run & 0.568 / 0.283 & \textbf{0.469} / 0.225 & -- \\
+\multirow{2}{*}{hopper} & \fas{} run & 0.550 / 0.296 & 0.468 / \textbf{0.258} & 0.420 / 0.283 \\
+& Uniform DR run & 0.568 / 0.283 & \textbf{0.469} / 0.225 & 0.424 / 0.233 \\
+\midrule
+\multirow{2}{*}{halfcheetah} & \fas{} run & 0.797 / 0.471 & \textbf{0.665} / \textbf{0.383} & 0.620 / 0.312 \\
+& Uniform DR run & 0.733 / 0.433 & 0.628 / 0.371 & 0.612 / 0.342 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
 Table~\ref{tab:rft} shows the RQ3 results.
-On walker2d, RFT recovers 78--85\% of the RL policy's gain over the pretrained policy. On hopper it recovers only 43--47\%.
-The successes collected by \fas{} make a better RFT dataset than those of uniform DR (walker2d 0.820 vs.\ 0.752; hopper OOD 0.258 vs.\ 0.225), presumably because they cover more hard conditions.
-Successes of the frozen pretrained policy give nothing, and mixing in nominal-only demonstrations hurts.
-\emph{Answer to RQ3: discovering successes is what matters; whether imitating them can replace the RL update depends on the task.} It can on walker2d, where successes are plentiful, but not on hopper, where success is rarer and more fragile.
+On walker2d, RFT recovers 78--85\% of the RL policy's train-grid gain over the pretrained policy. On hopper it recovers 43--47\%, and on halfcheetah 53--54\%.
+The successes collected by \fas{} make an equal or better RFT dataset than those of uniform DR (walker2d 0.820 vs.\ 0.752; hopper OOD 0.258 vs.\ 0.225; halfcheetah 0.665 vs.\ 0.628, the last within one standard deviation), presumably because they cover more hard conditions.
+Successes of the frozen pretrained policy give nothing. Mixing in nominal-only demonstrations lowers train success on all three tasks (by 2--17 points) and does not consistently help OOD.
+Why does RFT fall short on hopper and halfcheetah? Not because diffusion BC cannot reproduce the RL policy: BC on the successes of 100 rollouts per bin of the \emph{final} RL policy, with the same gradient steps, recovers 96--115\% of the RL gain on all three tasks. The gap comes from what RFT imitates, namely successes accumulated over all of training, many of them from earlier and noisier policies. Using only the successes of the last 50 iterations raises the recovered gain from 43--47\% to 71--77\% on hopper and from 52--54\% to 70--88\% on halfcheetah, but only from 79--85\% to 90--94\% on walker2d, where this staleness costs least. Keeping only successes with a margin over the success criterion does not help ($|t|<1.4$).
+\emph{Answer to RQ3: discovering successes is what matters, and imitation itself is not the bottleneck.} BC matches the RL policy when it imitates the final policy's successes, but RFT on the successes accumulated during training is diluted by earlier policies. It nearly suffices on walker2d and recovers only about half of the RL gain on hopper and halfcheetah.
 
 \subsection{LEGO assembly}
 \label{sec:lego}
@@ -262,7 +266,7 @@ Successes of the frozen pretrained policy give nothing, and mixing in nominal-on
 
 \subsection{Negative results}
 \label{sec:negative}
-(i) \fas{} gives no gain on hopper's main grid or on halfcheetah, whose hard bins are not data-limited: every method reaches about 0.42 on them, although \fas{} spends 65\% of its samples there.
+(i) \fas{} gives no gain on hopper's main grid: on its 20 frontier bins, uniform DR, \fas{}, LP and \fas{}+LP all reach about 0.47, and its hardest bins contain a push that no method learns (\S\ref{sec:rq2}).
 (ii) A harder walker2d grid (mass up to 1.75, friction down to 0.35, pushes up to 450\,N) does not widen the gap (0.635 vs.\ 0.618, $t=1.8$): when most bins are failing, the failure weights become nearly flat and \fas{} spreads its samples over about 21 bins.
 (iii) The LP gate does not detect hopper's unlearnable bins, whose failure rate fluctuates almost as much as that of frontier bins.
 (iv) PLR (\S\ref{sec:baselines}).
@@ -280,7 +284,7 @@ The practical lesson is that the condition space must be designed or adapted so 
 (1) \emph{Learnability-aware sampling:} the LP gate helps on walker2d but does not detect unlearnable bins; better estimates of learnability, e.g.\ from the success rate of the stochastic policy or from ensemble disagreement, could make \fas{} safe by default.
 (2) \emph{Combining \fas{} with ADR:} grow the condition range when the frontier is exhausted and focus within it otherwise.
 (3) \emph{Continuous conditions} instead of 36 discrete bins.
-(4) \emph{Hybrid RL+RFT:} use cheap RFT on \fas{}-collected successes between RL phases.
+(4) \emph{Hybrid RL+RFT:} BC on recent successes recovers most of the RL gain (\S\ref{sec:rq3}), so cheap RFT on the latest \fas{}-collected successes could replace part of the RL updates.
 \todo{LEGO-specific future work.}
 
 %===============================================================================
