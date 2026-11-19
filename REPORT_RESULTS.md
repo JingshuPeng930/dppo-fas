@@ -246,6 +246,24 @@ This is the skeleton of the report's Experiments / Results section for the three
   - Distillation: 100 deterministic rollouts per bin of the final RL policy on the train grid (seed 2000+s, not the eval episodes), successes only (2–3.3k episodes), BC with the same steps as the full RFT. Train success matches RL on every task (e.g. hopper 0.553 / 0.560 vs RL 0.550 / 0.568; t vs RFT ≈ 5), and OOD as well.
   - So diffusion BC can reproduce the RL policy; what limits RFT is that it imitates successes accumulated over training, most from earlier, noisier (stochastic exploration) policies. The last-50-iteration RFT closes most of the gap; the rest (late vs distillation) is consistent with exploration noise in the training rollouts.
   - Why walker2d is the exception: staleness costs it least (+9–11 points of recovery from late-only data vs +24–34 on hopper and +16–36 on halfcheetah).
+  - Why staleness costs walker2d least is *open*. It is not that walker2d's early successes are closer to its final policy (`scripts/fas/rft_staleness.py`: final RL policy queried deterministically on 300 saved chunks per iteration, all 18 source runs). Squared distance between the executed (clipped) action and the final policy's action, relative to the last-50-iteration level:
+
+    | Task | itr 0–24 | 50–74 | 100–124 | all data |
+    |---|---|---|---|---|
+    | walker2d | 1.38 | 1.26 | 1.12 | 1.15 |
+    | hopper | 1.23 | 1.12 | 1.07 | 1.08 |
+    | halfcheetah | 1.30 | 1.21 | 1.12 | 1.12 |
+
+    By this measure walker2d's data are the *most* stale. The late-iteration level itself (0.10–0.13) is about as large as the pretrained-vs-final distance on the same states (0.13–0.16), i.e. most of the mismatch is exploration noise. So equal action-space staleness costs hopper and halfcheetah more.
+  - **Sensitivity test** (`scripts/fas/run_rft_sensitivity.sh`, eval agent `++action_noise_std`): the 18 final RL policies (FAS + uniform pooled, n=6 per task) and the pretrained policy (3 eval seeds) on the train grid with N(0, σ²) noise on every executed action. Loss as a share of the RL gain (RL(0) − pretrained(0)):
+
+    | Task | RL gain | σ=0.1 | σ=0.2 | σ=0.3 |
+    |---|---|---|---|---|
+    | walker2d | .353 (.506→.859) | 0.07 (.836) | 0.18 (.796) | 0.66 (.626) |
+    | hopper | .176 (.386→.562) | 0.14 (.538) | 0.20 (.528) | 0.59 (.458) |
+    | halfcheetah | .220 (.552→.772) | 0.48 (.666) | 2.18 (.292) | 3.33 (.039) |
+
+    At small perturbations walker2d loses the smallest share of its gain. On hopper the *absolute* loss at σ=0.1 equals walker2d's (−2.4 points) and the gain is half as large; halfcheetah's 4000-return threshold makes it far more sensitive in absolute terms. This separates walker2d from the other two tasks, which is the question. It does not order hopper vs halfcheetah: by sensitivity halfcheetah should recover less, but it recovers slightly more. Isotropic noise is only a proxy for RFT's imitation error, and there are only three tasks, so this is consistent evidence, not proof.
 - **Relation to openpi-comet-style RFT:** ours is the same recipe (successes only, flow/diffusion BC loss, optional demo mix) applied per run.
 
 ## 5. Related baselines (answer to the TA)
@@ -272,7 +290,7 @@ This is the skeleton of the report's Experiments / Results section for the three
 ## 6. Limitations
 
 - 3 seeds for most comparisons; 5–6 for the main uniform vs FAS comparison. Bootstrap CIs with so few seeds are optimistic.
-- The hopper "learnable grid" result (3d) is a single 3-seed test of a pre-registered prediction. It supports the learnability explanation but does not prove it in general.
+- The hopper "learnable grid" result (3d) is a single 5-seed test of a prediction written down before training (not a formal pre-registration); the learnable grid is also easier overall. It supports the learnability explanation but does not prove it in general.
 - FAS + LP gate was designed after seeing the main results.
 - 36 discrete bins.
 - Success criteria were calibrated per task.

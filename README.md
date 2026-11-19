@@ -14,8 +14,8 @@ Only the sampler changes; the PPO update, hyperparameters and budget are identic
 
 **Main findings** (MuJoCo hopper / walker2d / halfcheetah, 16M env steps per run, at least 5 seeds per method):
 - FAS improves robustness, worst-case success and learning speed **when the conditions it focuses on are learnable** (walker2d; a smaller gain on halfcheetah), and the gain grows under sparse reward.
-- When the failed conditions are unlearnable within the budget (hopper's 300 N pushes), FAS wastes samples and gives no gain. Removing those conditions restores a significant gain (a pre-registered test). The critic is not the bottleneck.
-- Imitating the successes that RL discovered (RFT) recovers most of RL's gain on walker2d (78–85%) but only about half on hopper and halfcheetah. Imitation itself is not the bottleneck: BC on the final RL policy's successes matches RL on all three tasks; RFT falls short because most of its successes come from earlier policies.
+- When the failed conditions are unlearnable within the budget (hopper's 300 N pushes), FAS wastes samples and gives no gain. On a grid without them FAS gives a significant gain, as predicted before training (supporting, not isolating, learnability). Critic error does not increase under FAS.
+- Imitating the successes that RL discovered (RFT) recovers most of RL's gain on walker2d (78–85%) but only about half on hopper and halfcheetah. Imitation itself is not the bottleneck: BC on the final RL policy's successes matches RL on all three tasks; RFT falls short largely because many of its successes come from earlier policies.
 
 <img src="figs/fig_final.png" alt="Final success on the training and held-out grids" width="100%"/>
 

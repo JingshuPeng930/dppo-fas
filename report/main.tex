@@ -36,8 +36,8 @@ Domain randomization fixes part of this, but it spends most of its samples on co
 We study \emph{Failure-Aware Sampling} (\fas{}): during DPPO fine-tuning, training conditions are sampled in proportion to the policy's current failure rate on them.
 On walker2d, \fas{} improves success over uniform domain randomization by 3.9 points on the training grid, 7.8 points on the hardest quarter of conditions and 4.0 points on held-out conditions; a learning-progress-gated variant raises these gains to 6.0, 14.0 and 6.2 points.
 On halfcheetah the gain is smaller (2.9 points, $t=2.0$, 8 seeds); on hopper \fas{} gives no gain, and sparse rewards make it worse.
-We trace this to \emph{learnability}: hopper's grid contains a disturbance no method learns, and once it is removed, \fas{} beats uniform sampling as we predicted before the run.
-Critic error is not the bottleneck: \fas{} never increases it, and a value-error-based curriculum (PLR) performs worse than uniform sampling.
+Our evidence points to \emph{learnability}: hopper's grid contains a disturbance no method learns, and on a grid without it \fas{} beats uniform sampling, as we predicted before training.
+Critic error does not appear to be the bottleneck: \fas{} does not increase it in any setting we measured. A value-error-based curriculum (PLR) performs worse than uniform sampling.
 \todo{one sentence on the LEGO results.}
 \end{abstract}
 
@@ -56,7 +56,7 @@ Uniform DR ignores what the policy already knows. On walker2d, uniform DR solves
 On-policy RL makes this worse. PPO's batch is a fixed number of environment \emph{steps}, and episodes on hard conditions end early when the robot falls. Under uniform DR, the hardest third of the conditions therefore receives only 24--26\% of the training steps.
 
 \textbf{Key idea.} \emph{Sample training conditions in proportion to how often the current policy fails on them.}
-Failure is cheap to measure, needs no learned model, and points the on-policy gradient at the conditions where it is most informative.
+Failure is cheap to measure, needs no learned model, and points the on-policy gradient at the conditions where it is likely to be most informative.
 The idea can also fail. A failed condition may be unlearnable, and concentrating on it then wastes samples. Concentration may also destabilize the critic, which must track a moving state distribution, especially when the reward is sparse.
 
 We therefore ask three research questions:
@@ -66,7 +66,7 @@ We therefore ask three research questions:
 
 \textbf{Contributions.}
 (i) A drop-in failure-aware condition sampler for DPPO, evaluated against uniform DR and three adaptive curricula (SGS, learning progress, PLR) on three MuJoCo tasks and a LEGO assembly task \todo{LEGO name}.
-(ii) A pre-registered test showing that the benefit of \fas{} depends on whether the failed conditions are learnable, not on critic stability.
+(ii) Evidence, including a prediction fixed before training, that the benefit of \fas{} depends on whether the failed conditions are learnable rather than on critic stability.
 (iii) A negative result for value-error prioritization in dense-reward locomotion, and an analysis of when RFT can replace the RL update.
 
 %===============================================================================
@@ -188,22 +188,22 @@ Per-bin analysis (as in Fig.~\ref{fig:v3}, right) shows where the gains come fro
 \textbf{Sampling strength.} With $\alpha=1$, $\beta=0.5$, \fas{} samples about as evenly as 30 of the 36 bins (effective number of bins $1/\sum_c p(c)^2$) and matches uniform DR (walker2d 0.840).
 With $\alpha=3$, $\beta=0.9$ it concentrates on about 12 bins and gains 3.9 points. \fas{} helps only when it actually concentrates.
 
-\textbf{Critic error is not the bottleneck.} For every bin we roll out the stochastic policy and compare $V(s)$ with the Monte-Carlo return, which is the critic's regression target.\footnote{DPPO treats the time limit as terminal and its critic has no time input, so part of the error ($\approx$0.3 relative) is irreducible; we therefore compare methods, not absolute values.}
+\textbf{Critic error does not appear to be the bottleneck.} For every bin we roll out the stochastic policy and compare $V(s)$ with the Monte-Carlo return, which is the critic's regression target.\footnote{DPPO treats the time limit as terminal and its critic has no time input, so part of the error ($\approx$0.3 relative) is irreducible; we therefore compare methods, not absolute values.}
 \fas{} never increases relative critic error: walker2d 0.319 vs.\ 0.332 for uniform, hopper 0.350 vs.\ 0.360.
 The same holds under sparse rewards (below), including on the bins \fas{} keeps failing.
 Bins that a method samples more have slightly \emph{lower} error (correlation $-0.1$ to $-0.36$).
 
-\textbf{Reward sparsity amplifies whatever concentration does.} We delay the dense reward: it is accumulated and paid every $K$ steps, which leaves the episode return unchanged (Fig.~\ref{fig:sparse}).
+\textbf{Reward sparsity amplifies the effect of concentration.} We delay the dense reward: it is accumulated and paid every $K$ steps, which leaves the episode return unchanged (Fig.~\ref{fig:sparse}).
 On walker2d, the advantage of \fas{} grows with sparsity: at $K=25$ it is $+5.4$ points ($t=4.5$) on the training grid and $+11.5$ ($t=7.8$) on the worst-25\% bins.
 On hopper the sign flips. \fas{} falls behind uniform DR as $K$ grows, by $-2.1$ points at $K=100$ (5 seeds), and its AUC is lower with a 95\% CI that excludes zero ($t=-3.3$).
-Since the critic is unaffected, the difference must come from \emph{where} the samples go.
+Since critic error is unchanged, this points to \emph{where} the samples go.
 
-\textbf{Learnability: a pre-registered test.} On hopper's main grid, the 300\,N pushes turned out to be far harder than on the other two robots: after fine-tuning, uniform DR is still at about the pretrained success rate on these bins. They are effectively unlearnable within our budget, yet \fas{} places 46\% of its samples on bins it is currently failing.
+\textbf{Learnability: a prediction fixed before training.} On hopper's main grid, the 300\,N pushes turned out to be far harder than on the other two robots: after fine-tuning, uniform DR is still at about the pretrained success rate on these bins. No method we tried learns them within our budget, yet \fas{} places 46\% of its samples on bins it is currently failing.
 This observation motivated a follow-up experiment on a second hopper grid, the \emph{learnable grid}: the same mass and friction values, with pushes of $\{0, 100, 200\}$\,N instead of $\{0, 150, 300\}$\,N.
 We chose it by evaluating existing policies (the uniform-DR policy trained on the main grid leaves only 2 of its 36 bins unsolved), and wrote down the prediction that \fas{} beats uniform DR before training on it.
 The prediction holds (Fig.~\ref{fig:v3}): over 5 seeds, \fas{} reaches 0.723 vs.\ 0.684 train success ($t=3.5$), 0.358 vs.\ 0.282 on the worst-25\% bins ($t=2.7$), and a higher AUC than uniform DR on every seed ($t=2.6$); all three bootstrap 95\% CIs exclude zero. OOD success is unchanged (0.303 vs.\ 0.307).
 All of the gain is on frontier bins (0.49$\to$0.56); solved bins stay at 0.96.
-\emph{Answer to RQ2: the trade-off is governed by whether the conditions \fas{} focuses on are learnable, not by critic stability.}
+\emph{Answer to RQ2: in our experiments, the trade-off is best explained by whether the conditions \fas{} focuses on are learnable, not by critic stability.} The learnable grid is also easier overall, so this test supports but does not isolate learnability.
 
 \begin{figure}[t]
 \centering
@@ -224,8 +224,8 @@ All of the gain is on frontier bins (0.49$\to$0.56); solved bins stay at 0.96.
 
 SGS matches \fas{} on walker2d and learns fastest there (median 60 iterations to 0.8 success), but it is among the worst methods on hopper (0.496) and no better than uniform DR on halfcheetah. LP lies between uniform DR and \fas{} on walker2d and is within noise of uniform DR elsewhere.
 \textbf{PLR is worse than uniform DR} on all three tasks (walker2d 0.790, hopper 0.493, halfcheetah 0.712; $t$ between $-2.9$ and $-3.9$).
-The reason is that PLR samples the \emph{easy} bins: 87\% (walker2d) and 66\% (hopper) of its mass goes to bins that uniform DR already solves, and its sampling probability correlates positively with uniform's per-bin success ($+0.73$/$+0.60$).
-In dense-reward locomotion, the positive value loss scales with the return and the episode length, so it tracks how long the policy survives rather than how much it can still learn.
+PLR samples the \emph{easy} bins: 87\% (walker2d) and 66\% (hopper) of its mass goes to bins that uniform DR already solves, and its sampling probability correlates positively with uniform's per-bin success ($+0.73$/$+0.60$).
+A likely reason is that in dense-reward locomotion the positive value loss scales with the return and the episode length, so it tracks how long the policy survives rather than how much it can still learn.
 Failure rate is a more direct difficulty signal here, which is consistent with the critic analysis above.
 
 \subsection{RQ3: RL update vs.\ imitating discovered successes}
@@ -240,9 +240,8 @@ Failure rate is a more direct difficulty signal here, which is consistent with t
 \toprule
 Task & Source of successes & RL policy & RFT & RFT + 60\% D4RL demos \\
 \midrule
-\multirow{3}{*}{walker2d} & \fas{} run & 0.882 / 0.450 & \textbf{0.820} / \textbf{0.400} & 0.654 / 0.367 \\
+\multirow{2}{*}{walker2d} & \fas{} run & 0.882 / 0.450 & \textbf{0.820} / \textbf{0.400} & 0.654 / 0.367 \\
 & Uniform DR run & 0.831 / 0.400 & 0.752 / 0.383 & 0.635 / 0.350 \\
-& Frozen pretrained & 0.464 / 0.288 & 0.454 / 0.275 & 0.488 / 0.325 \\
 \midrule
 \multirow{2}{*}{hopper} & \fas{} run & 0.550 / 0.296 & 0.468 / \textbf{0.258} & 0.420 / 0.283 \\
 & Uniform DR run & 0.568 / 0.283 & \textbf{0.469} / 0.225 & 0.424 / 0.233 \\
@@ -253,12 +252,10 @@ Task & Source of successes & RL policy & RFT & RFT + 60\% D4RL demos \\
 \end{tabular}
 \end{table}
 
-Table~\ref{tab:rft} shows the RQ3 results.
-On walker2d, RFT recovers 78--85\% of the RL policy's train-grid gain over the pretrained policy. On hopper it recovers 43--47\%, and on halfcheetah 53--54\%.
-The successes collected by \fas{} make an equal or better RFT dataset than those of uniform DR (walker2d 0.820 vs.\ 0.752; hopper OOD 0.258 vs.\ 0.225; halfcheetah 0.665 vs.\ 0.628, the last within one standard deviation), presumably because they cover more hard conditions.
-Successes of the frozen pretrained policy give nothing. Mixing in nominal-only demonstrations lowers train success on all three tasks (by 2--17 points) and does not consistently help OOD.
-Why does RFT fall short on hopper and halfcheetah? Not because diffusion BC cannot reproduce the RL policy: BC on the successes of 100 rollouts per bin of the \emph{final} RL policy, with the same gradient steps, recovers 96--115\% of the RL gain on all three tasks. The gap comes from what RFT imitates, namely successes accumulated over all of training, many of them from earlier and noisier policies. Using only the successes of the last 50 iterations raises the recovered gain from 43--47\% to 71--77\% on hopper and from 52--54\% to 70--88\% on halfcheetah, but only from 79--85\% to 90--94\% on walker2d, where this staleness costs least. Keeping only successes with a margin over the success criterion does not help ($|t|<1.4$).
-\emph{Answer to RQ3: discovering successes is what matters, and imitation itself is not the bottleneck.} BC matches the RL policy when it imitates the final policy's successes, but RFT on the successes accumulated during training is diluted by earlier policies. It nearly suffices on walker2d and recovers only about half of the RL gain on hopper and halfcheetah.
+On walker2d, RFT recovers 78--85\% of the RL policy's train-grid gain over the pretrained policy (Table~\ref{tab:rft}); on hopper 43--47\% and on halfcheetah 53--54\%.
+\fas{} successes make an equal or better RFT dataset than uniform DR's, presumably because they cover more hard conditions. Successes of the frozen pretrained policy give nothing ($0.454$ vs.\ $0.464$ on walker2d), and mixing in nominal-only demonstrations lowers train success by 2--17 points.
+RFT does not fall short because diffusion BC cannot reproduce the RL policy: BC on 100 rollouts per bin of the \emph{final} RL policy, with the same gradient steps, recovers 96--115\% of the gain on all tasks. Most of the gap comes from imitating successes accumulated over training, many from earlier policies: using only the last 50 iterations raises recovery to 71--77\% on hopper and 70--88\% on halfcheetah, but only to 90--94\% on walker2d. Walker2d's early data are not less stale (in action distance to the final policy they are the most stale); rather, walker2d loses the smallest share of its gain to action errors: Gaussian action noise with $\sigma=0.1$ removes 7\% of the RL gain on walker2d, 14\% on hopper (same absolute loss, half the gain) and 48\% on halfcheetah. This separates walker2d from the other two tasks but does not order hopper and halfcheetah, so it is supporting evidence rather than a full account. Keeping only successes with a margin over the success criterion does not help.
+\emph{Answer to RQ3: imitation itself is not the bottleneck;} but RFT on accumulated successes is diluted by earlier policies, which costs least on walker2d.
 
 \subsection{LEGO assembly}
 \label{sec:lego}
@@ -275,9 +272,9 @@ Why does RFT fall short on hopper and halfcheetah? Not because diffusion BC cann
 \section{Summary and Future Directions}
 \label{sec:conclusion}
 
-Failure-aware sampling is a one-line change to the condition sampler of DPPO. When the conditions a policy fails on are learnable, it improves robustness, worst-case performance and sample efficiency over uniform domain randomization, and the improvement grows under sparse reward.
+Failure-aware sampling is a one-line change to the condition sampler of DPPO. When the conditions a policy fails on are learnable (walker2d, halfcheetah, hopper's learnable grid), it improves robustness and worst-case performance over uniform domain randomization, on walker2d also sample efficiency, and there the improvement grows under sparse reward.
 When they are not learnable, it wastes samples, and sparse reward makes this worse.
-Critic stability, the risk we worried about most, turned out not to matter.
+Critic stability, the risk we worried about most, did not limit \fas{} in our experiments.
 The practical lesson is that the condition space must be designed or adapted so that its hard region is reachable.
 
 \textbf{Future directions.}

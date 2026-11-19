@@ -8,6 +8,7 @@ with this agent and the same eval config, so test conditions are identical.
 Outputs in logdir:
   result.npz   -- per-condition arrays + summary scalars
   result.json  -- human-readable summary incl. per-parameter marginals
+  ++action_noise_std=s -- add N(0, s^2) noise to every executed action (RQ3 sensitivity test)
   success_trajs/itr_0000.npz -- only with ++save_success_trajs=true: the successful episodes, in the
                   format the RL agent saves for RFT (RQ3 distillation test: BC on the final policy's own
                   successes, agent/dataset/rft.py)
@@ -41,6 +42,9 @@ class EvalDiffusionDisturbanceAgent(EvalAgent):
         self.result_json_path = self.result_path.replace(".npz", ".json")
         self.save_success_trajs = bool(cfg.get("save_success_trajs", False))
         self.traj_drop_last = int(cfg.get("traj_drop_last", 25))  # as in the RL agent: do not imitate the fall
+        # RQ3 sensitivity test: Gaussian noise (normalized action units) added to every executed action
+        self.action_noise_std = float(cfg.get("action_noise_std", 0.0))
+        self.noise_rng = np.random.default_rng(self.seed)
 
     def run(self):
         timer = Timer()
@@ -68,6 +72,8 @@ class EvalDiffusionDisturbanceAgent(EvalAgent):
                 cond = {"state": torch.from_numpy(prev_obs_venv["state"]).float().to(self.device)}
                 samples = self.model(cond=cond, deterministic=True)
                 action_venv = samples.trajectories.cpu().numpy()[:, : self.act_steps]
+            if self.action_noise_std > 0:
+                action_venv = action_venv + self.action_noise_std * self.noise_rng.standard_normal(action_venv.shape)
             if self.save_success_trajs:
                 for i in range(E):
                     bufs[i].append((np.array(prev_obs_venv["state"][i], np.float32), np.array(action_venv[i], np.float32)))
