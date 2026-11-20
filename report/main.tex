@@ -193,9 +193,9 @@ With $\alpha=3$, $\beta=0.9$ it concentrates on about 12 bins and gains 3.9 poin
 The same holds under sparse rewards (below), including on the bins \fas{} keeps failing.
 Bins that a method samples more have slightly \emph{lower} error (correlation $-0.1$ to $-0.36$).
 
-\textbf{Reward sparsity amplifies the effect of concentration.} We delay the dense reward: it is accumulated and paid every $K$ steps, which leaves the episode return unchanged (Fig.~\ref{fig:sparse}).
-On walker2d, the advantage of \fas{} grows with sparsity: at $K=25$ it is $+5.4$ points ($t=4.5$) on the training grid and $+11.5$ ($t=7.8$) on the worst-25\% bins.
-On hopper the sign flips. \fas{} falls behind uniform DR as $K$ grows, by $-2.1$ points at $K=100$ (5 seeds), and its AUC is lower with a 95\% CI that excludes zero ($t=-3.3$).
+\textbf{Reward sparsity.} We delay the dense reward: it is accumulated and paid every $K$ steps, which leaves the episode return unchanged (Fig.~\ref{fig:sparse}).
+On walker2d, the advantage of \fas{} persists under sparse reward (training grid $+3.8$, $+4.6$, $+4.3$ points at $K=1,25,100$, all $t>3.5$) and grows modestly on the worst-25\% bins ($+7.8$, $+9.8$, $+10.6$; $t=5.2$ at $K=100$).
+On hopper the sign flips: \fas{} falls behind uniform DR under sparse reward ($-2.5$ and $-2.1$ points at $K=25$ and $100$, $t=-1.9$ and $-1.4$), and at $K=100$ its AUC is lower with a 95\% CI that excludes zero ($t=-3.3$).
 Since critic error is unchanged, this points to \emph{where} the samples go.
 
 \textbf{Learnability: a prediction fixed before training.} On hopper's main grid, the 300\,N pushes turned out to be far harder than on the other two robots: after fine-tuning, uniform DR is still at about the pretrained success rate on these bins. No method we tried learns them within our budget, yet \fas{} places 46\% of its samples on bins it is currently failing.
@@ -215,7 +215,7 @@ All of the gain is on frontier bins (0.49$\to$0.56); solved bins stay at 0.96.
 \begin{figure}[t]
 \centering
 \includegraphics[width=\linewidth]{fig_sparse_compact.pdf}
-\caption{Reward sparsity: the dense reward is paid every $K$ environment steps (episode return unchanged). Final success and worst-25\% bins on the training grid; lines show the mean over seeds, faint dots individual seeds. Seeds for $K=1/25/100$: walker2d 5/3/3, hopper 6/3/5.}
+\caption{Reward sparsity: the dense reward is paid every $K$ environment steps (episode return unchanged). Final success and worst-25\% bins on the training grid; lines show the mean over seeds, faint dots individual seeds. Seeds for $K=1/25/100$: walker2d 5/5/5, hopper 6/5/5.}
 \label{fig:sparse}
 \end{figure}
 
@@ -265,20 +265,20 @@ RFT does not fall short because diffusion BC cannot reproduce the RL policy: BC 
 \label{sec:negative}
 (i) \fas{} gives no gain on hopper's main grid: on its 20 frontier bins, uniform DR, \fas{}, LP and \fas{}+LP all reach about 0.47, and its hardest bins contain a push that no method learns (\S\ref{sec:rq2}).
 (ii) A harder walker2d grid (mass up to 1.75, friction down to 0.35, pushes up to 450\,N) does not widen the gap (0.635 vs.\ 0.618, $t=1.8$): when most bins are failing, the failure weights become nearly flat and \fas{} spreads its samples over about 21 bins.
-(iii) The LP gate does not detect hopper's unlearnable bins, whose failure rate fluctuates almost as much as that of frontier bins.
+(iii) Neither learnability gate we tried detects hopper's hardest bins. Their failure rate fluctuates almost as much as that of frontier bins (LP gate), and it also falls slowly ($\approx$0.08 over training), so a post-hoc gate on cumulative progress (weight scaled by the failure drop since the start, from iteration 40) only reduces their weight to about 0.7 and leaves hopper unchanged (0.564 vs.\ 0.561; walker2d 0.890, like \fas{}+LP). On hopper, learnability is a matter of degree rather than a binary property.
 (iv) PLR (\S\ref{sec:baselines}).
 
 %===============================================================================
 \section{Summary and Future Directions}
 \label{sec:conclusion}
 
-Failure-aware sampling is a one-line change to the condition sampler of DPPO. When the conditions a policy fails on are learnable (walker2d, halfcheetah, hopper's learnable grid), it improves robustness and worst-case performance over uniform domain randomization, on walker2d also sample efficiency, and there the improvement grows under sparse reward.
+Failure-aware sampling is a one-line change to the condition sampler of DPPO. When the conditions a policy fails on are learnable (walker2d, halfcheetah, hopper's learnable grid), it improves robustness and worst-case performance over uniform domain randomization, on walker2d also sample efficiency, and there the improvement persists under sparse reward.
 When they are not learnable, it wastes samples, and sparse reward makes this worse.
 Critic stability, the risk we worried about most, did not limit \fas{} in our experiments.
 The practical lesson is that the condition space must be designed or adapted so that its hard region is reachable.
 
 \textbf{Future directions.}
-(1) \emph{Learnability-aware sampling:} the LP gate helps on walker2d but does not detect unlearnable bins; better estimates of learnability, e.g.\ from the success rate of the stochastic policy or from ensemble disagreement, could make \fas{} safe by default.
+(1) \emph{Learnability-aware sampling:} the LP and cumulative-progress gates help on walker2d but do not detect hopper's hardest bins; better estimates of learnability, e.g.\ from the success rate of the stochastic policy or from ensemble disagreement, could make \fas{} safe by default.
 (2) \emph{Combining \fas{} with ADR:} grow the condition range when the frontier is exhausted and focus within it otherwise.
 (3) \emph{Continuous conditions} instead of 36 discrete bins.
 (4) \emph{Hybrid RL+RFT:} BC on recent successes recovers most of the RL gain (\S\ref{sec:rq3}), so cheap RFT on the latest \fas{}-collected successes could replace part of the RL updates.

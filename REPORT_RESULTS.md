@@ -138,20 +138,20 @@ This is the skeleton of the report's Experiments / Results section for the three
   - **So the hopper degradation is not a critic-stability effect.** It comes from where the samples go (unlearnable bins), which 3d confirms.
   - Do not compare error across K: delayed rewards change the shape of the Monte-Carlo target, so the absolute level is not comparable.
 
-**3c. Reward sparsity (walker2d and hopper, all available seeds, `fig_sparse`).** Seeds for K = 1 / 25 / 100: walker2d 5 / 3 / 3, hopper 6 / 3 / 5. The dense reward is paid out every K env steps; the episode return is unchanged.
+**3c. Reward sparsity (walker2d and hopper, all available seeds, `fig_sparse`).** Seeds for K = 1 / 25 / 100: walker2d 5 / 5 / 5, hopper 6 / 5 / 5 (seeds 3–4 at K = 25 / walker2d K = 100 added 2026-11-19, `scripts/fas/run_stall.sh`). The dense reward is paid out every K env steps; the episode return is unchanged.
 
 | Task | K | Uniform final | FAS final | Δ final | Δ worst 25% | Δ AUC |
 |---|---|---|---|---|---|---|
 | walker2d | 1 | 0.836 | 0.874 | +0.038 (t = 3.8) | +0.078 (t = 2.3) | +0.026 (t = 2.8) |
-| walker2d | 25 | 0.831 | 0.884 | +0.053 (t = 4.5) | +0.115 (t = 7.8) | +0.039 (t = 4.2) |
-| walker2d | 100 | 0.828 | 0.862 | +0.034 (t = 2.5) | +0.093 (t = 3.7) | +0.023 (t = 2.1) |
+| walker2d | 25 | 0.833 | 0.879 | +0.046 (t = 4.6) | +0.098 (t = 4.7) | +0.032 (t = 3.4) |
+| walker2d | 100 | 0.827 | 0.870 | +0.043 (t = 3.6) | +0.106 (t = 5.2) | +0.031 (t = 4.1) |
 | hopper | 1 | 0.561 | 0.557 | −0.004 (t = −0.3) | +0.037 (t = 1.8) | −0.003 (t = −0.8) |
-| hopper | 25 | 0.563 | 0.541 | −0.022 (t = −1.2) | −0.030 (t = −1.4) | −0.014 (t = −1.3) |
+| hopper | 25 | 0.564 | 0.539 | −0.025 (t = −1.85, CI [−0.049, −0.002]) | −0.020 (t = −1.5) | −0.006 (t = −0.7) |
 | hopper | 100 | 0.538 | 0.517 | −0.021 (t = −1.4) | −0.011 (t = −0.4) | −0.027 (t = −3.3, CI [−0.040, −0.012]) |
 
-- **Claim: sparsity amplifies whatever FAS's concentration does on that task.**
-  - walker2d: the hard bins are learnable, and FAS's advantage holds or grows.
-  - hopper: FAS spends 46% of its samples on bins it keeps failing (300 N pushes, see 3a), and it falls behind uniform as K grows. Only the AUC at K = 100 is clearly significant (5 seeds, CI excludes 0); the other hopper gaps are trends (|t| ≤ 1.4). With seeds 3–4 added, the K = 100 final-success gap shrank from −0.034 to −0.021 while the AUC gap held.
+- **Claim (weakened at 5 seeds): FAS's advantage persists under sparse reward where the hard bins are learnable, and FAS falls behind where they are not.**
+  - walker2d: the final-success gain is flat in K (+3.8 / +4.6 / +4.3); only the worst-25% gain grows modestly (+7.8 / +9.8 / +10.6). At 3 seeds K = 25 looked larger (+5.4 / +11.5); do not claim the gain grows with sparsity.
+  - hopper: FAS spends 46% of its samples on bins it keeps failing (300 N pushes, see 3a), and it falls behind uniform as K grows. The AUC at K = 100 (CI excludes 0) and the final success at K = 25 (t = −1.85, CI barely excludes 0) are the significant gaps; the rest are trends. With seeds 3–4 added, the K = 100 final-success gap shrank from −0.034 to −0.021 while the AUC gap held.
 - **Interpretation (ties RQ2 together):** concentrating on failures is a bet that the failed conditions are learnable. With a weaker reward signal, wasted samples on unlearnable conditions cost more, and samples on learnable ones are worth more.
 - **Not a claim:** do not say "FAS is better under sparse reward" in general, or "sparser is always better" (walker2d is not monotonic).
 
@@ -184,6 +184,16 @@ This is the skeleton of the report's Experiments / Results section for the three
 - **halfcheetah (5 seeds):** best method: 0.795 vs 0.761 (t = 2.7), worst 25% 0.407 vs 0.333 (t = 3.2), AUC 0.705 vs 0.676 (t = 3.8); all three CIs exclude 0. OOD 0.498 vs 0.459 (t = 1.4).
 - **hopper main grid (5 seeds):** no help (0.557; AUC lower, t = −3.9). The gate does not identify the unlearnable bins: their failure rate fluctuates as much as frontier bins' (|Δ failure| 0.053 vs 0.088).
 - **How to present it:** a promising variant, not the main method. It was designed after seeing the main results, so it should be labeled post hoc.
+
+**Cumulative-progress gate (`fas.score=failure_stall`, post hoc, `scripts/fas/run_stall.sh`, 5 seeds).** Weight (s_c+δ)^α · g_c with g_c = clip((failure over the first 10 updates − slow failure EMA) / 0.1, 0.25, 1), active from update 40. Designed after the LP gate failed on hopper; checked offline first on the hopper FAS/uniform histories (300 N bins vs other hard bins, per-run AUC of cumulative drop ≈ 0.7 at itr 40–60, 0.8 at itr 80–100).
+
+| Task | uniform | FAS | FAS+LP | FAS+stall gate | stall vs uniform | stall vs FAS |
+|---|---|---|---|---|---|---|
+| walker2d train / worst / AUC / OOD | .836 / .498 / .754 / .395 | .874 / .576 / .780 / .435 | .896 / .638 / .793 / .457 | .890 / .622 / .793 / .450 | final t = 7.5, worst t = 5.0, AUC t = 5.8, OOD t = 2.3 | final t = 1.5, worst 1.6, AUC 1.3 (n.s.) |
+| hopper train / worst / AUC / OOD | .561 / .141 / .456 / .279 | .557 / .178 / .453 / .279 | .557 / .164 / .439 / .278 | .564 / .189 / .455 / .297 | final t = 0.2, worst t = 1.7, OOD t = 1.2 | n.s. |
+
+- **Negative on hopper.** The gate barely moves the samples: mass on the 300 N bins in iterations 100–199 is 0.53 vs 0.57 for FAS. At the end of training the gate on those bins averages 0.7 (8–25% at the floor) vs 0.9 for the other hard bins, because the 300 N bins *also* improve slowly (failure −0.07 to −0.09 over training; success 0.24 → 0.27). Hopper's hardest bins are slowly learnable, not unlearnable, so cumulative progress separates them only weakly. A larger margin would be tuned to hopper and was not tried.
+- **walker2d:** as expected the gate rarely fires (mass on 300 N bins 0.91 vs 0.90 for FAS); results match FAS+LP and are not significantly above FAS.
 
 ## 4. RQ3: RL vs RFT on discovered successes (`fig_rq3`, all three tasks)
 

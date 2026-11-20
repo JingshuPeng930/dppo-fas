@@ -54,6 +54,10 @@ class TrainPPODiffusionFASAgent(TrainPPODiffusionAgent):
             eps=fas_cfg.get("eps", 1e-8),
             ema_slow=fas_cfg.get("ema_slow", 0.1),
             lp_floor=fas_cfg.get("lp_floor", 0.25),
+            stall_margin=fas_cfg.get("stall_margin", 0.1),
+            stall_floor=fas_cfg.get("stall_floor", 0.25),
+            stall_warmup=fas_cfg.get("stall_warmup", 40),
+            stall_init=fas_cfg.get("stall_init", 10),
         )
         self.fas_update_from = set(fas_cfg.get("update_from", ["eval", "train"]))
         assert self.fas_update_from <= {"eval", "train"}, self.fas_update_from

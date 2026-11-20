@@ -19,6 +19,10 @@ with the per-bin weight w_c chosen by `score` (all share the EMA estimates and t
   failure_progress : (s_c + delta)^alpha * (LP_c / max LP + lp_floor)  -- FAS gated by learnability:
              bins that keep failing without any change in their failure EMA (likely unlearnable) get
              lp_floor / (1 + lp_floor) of the weight of an equally failing bin that is improving.
+  failure_stall : (s_c + delta)^alpha * g_c,  g_c = clip((s_c^init - s_c^slow) / stall_margin, stall_floor, 1)
+             after stall_warmup updates (g = 1 before): FAS gated by *cumulative* progress, s_c^init = mean
+             failure over the first stall_init updates. Bins whose failure has not dropped by stall_margin since
+             the start of training (likely unlearnable within the budget) are down-weighted (post hoc, RQ2).
   value    : (v_c / max v + delta)^alpha,  v_c = EMA of the positive value loss mean_t max(A_t, 0) of the
              bin's train steps (PLR score, Jiang et al. ICML 2021), updated by update_value(); same power
              form and beta-mix as FAS so only the signal (value error vs failure) differs.
@@ -82,8 +86,9 @@ class ConditionSpace:
         return out
 
 
-SCORES = ("failure", "frontier", "progress", "value", "failure_progress")
-_FLOAT_PARAMS = ("alpha", "beta", "delta", "ema_rate", "target", "kappa", "temperature", "eps", "ema_slow", "lp_floor")
+SCORES = ("failure", "frontier", "progress", "value", "failure_progress", "failure_stall")
+_FLOAT_PARAMS = ("alpha", "beta", "delta", "ema_rate", "target", "kappa", "temperature", "eps", "ema_slow", "lp_floor",
+                 "stall_margin", "stall_floor", "stall_warmup", "stall_init")
 
 
 class FailureAwareSampler:
@@ -104,6 +109,10 @@ class FailureAwareSampler:
         eps: float = 1e-8,
         ema_slow: float = 0.1,
         lp_floor: float = 0.25,
+        stall_margin: float = 0.1,
+        stall_floor: float = 0.25,
+        stall_warmup: int = 40,
+        stall_init: int = 10,
     ):
         assert n_bins > 0
         assert 0.0 <= beta <= 1.0, "beta must be in [0, 1]"
@@ -124,6 +133,13 @@ class FailureAwareSampler:
         self.eps = float(eps)
         self.ema_slow = float(ema_slow)
         self.lp_floor = float(lp_floor)
+        self.stall_margin = float(stall_margin)
+        self.stall_floor = float(stall_floor)
+        self.stall_warmup = float(stall_warmup)
+        self.stall_init = float(stall_init)
+        self.n_updates = 0
+        self.init_fail = np.zeros(n_bins)  # failures / episodes over the first stall_init updates
+        self.init_n = np.zeros(n_bins)
         self.scores = np.full(n_bins, float(init_score))
         self.scores_slow = self.scores.copy()  # slow EMA, only used by score="progress"
         self.values = np.zeros(n_bins)  # EMA positive value loss, only used by score="value"
@@ -154,7 +170,17 @@ class FailureAwareSampler:
         self.scores[later] = (1 - self.ema_rate) * self.scores[later] + self.ema_rate * batch_fail[later]
         self.scores_slow[later] = (1 - self.ema_slow) * self.scores_slow[later] + self.ema_slow * batch_fail[later]
         self.n_observed += counts
+        if self.n_updates < self.stall_init:
+            self.init_fail += fails
+            self.init_n += counts
+        self.n_updates += 1
         return batch_fail
+
+    def stall_gate(self) -> np.ndarray:
+        if self.n_updates < self.stall_warmup:
+            return np.ones(self.n_bins)
+        init = np.where(self.init_n > 0, self.init_fail / np.maximum(self.init_n, 1), self.scores_slow)
+        return np.clip((init - self.scores_slow) / self.stall_margin, self.stall_floor, 1.0)
 
     def update_value(self, cond_ids: Sequence[int], pos_adv: Sequence[float]) -> np.ndarray:
         """PLR score: per-bin mean of max(A_t, 0) over a batch of train steps, EMA-smoothed (ema_rate).
@@ -190,6 +216,8 @@ class FailureAwareSampler:
             lp = np.abs(self.scores - self.scores_slow)
             lp = lp / lp.max() if lp.max() > 0 else np.zeros_like(lp)
             return np.power(self.scores + self.delta, self.alpha) * (lp + self.lp_floor)
+        if self.score == "failure_stall":
+            return np.power(self.scores + self.delta, self.alpha) * self.stall_gate()
         if self.score == "value":
             v = self.values / self.values.max() if self.values.max() > 0 else np.zeros_like(self.values)
             return np.power(v + self.delta, self.alpha)
@@ -206,7 +234,8 @@ class FailureAwareSampler:
     def state_dict(self):
         d = {k: getattr(self, k) for k in _FLOAT_PARAMS}
         d.update(score=self.score, scores=self.scores.copy(), scores_slow=self.scores_slow.copy(),
-                 values=self.values.copy(), n_value_obs=self.n_value_obs.copy(), n_observed=self.n_observed.copy())
+                 values=self.values.copy(), n_value_obs=self.n_value_obs.copy(), n_observed=self.n_observed.copy(),
+                 n_updates=self.n_updates, init_fail=self.init_fail.copy(), init_n=self.init_n.copy())
         return d
 
     def load_state_dict(self, d):
@@ -216,6 +245,9 @@ class FailureAwareSampler:
         self.score = d.get("score", "failure")
         self.values = np.asarray(d.get("values", np.zeros(self.n_bins)), dtype=float).copy()
         self.n_value_obs = np.asarray(d.get("n_value_obs", np.zeros(self.n_bins)), dtype=np.int64).copy()
+        self.n_updates = int(d.get("n_updates", 0))
+        self.init_fail = np.asarray(d.get("init_fail", np.zeros(self.n_bins)), dtype=float).copy()
+        self.init_n = np.asarray(d.get("init_n", np.zeros(self.n_bins)), dtype=float).copy()
         for k in _FLOAT_PARAMS:
             if k in d:  # checkpoints from before the score option lack the new keys
                 setattr(self, k, float(d[k]))
